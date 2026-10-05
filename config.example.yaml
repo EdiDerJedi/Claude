@@ -1,0 +1,85 @@
+# ============================================================
+# TradingAI – Konfiguration
+# Kopieren nach config.yaml und anpassen.
+# ============================================================
+
+# paper = Simulation mit Live-Kursen aus dem Internet (kein Broker nötig)
+# live  = echter Handel über MetaTrader 5 (zuerst mit einem DEMO-Konto testen!)
+mode: paper
+
+symbols: [EURUSD, GBPUSD, XAUUSD]   # Namen genau wie im MT5-Marktbeobachtungsfenster
+timeframe: H1                       # M1, M5, M15, M30, H1, H4, D1
+history_bars: 600                   # Bars für die Signalberechnung
+loop_seconds: 30                    # wie oft nach einer neuen Bar geschaut wird
+state_dir: state                    # hier speichert die KI alles, was sie gelernt hat
+log_level: INFO
+
+mt5:
+  login: 0                          # 0 = das im Terminal eingeloggte Konto verwenden
+  password: ""
+  server: ""
+  path: ""                          # optional: C:/Program Files/MetaTrader 5/terminal64.exe
+  allow_real_account: false         # Schutz: erst auf true setzen, wenn du bewusst mit Echtgeld handeln willst
+  magic: 26100501                   # Kennung der Bot-Orders (manuelle Trades werden nie angefasst)
+  deviation: 20                     # max. Slippage in Points
+
+risk:
+  risk_per_trade: 0.01              # 1 % des Kapitals pro Trade (Abstand bis Stop-Loss)
+  max_open_positions: 3
+  max_daily_loss: 0.03              # ab 3 % Tagesverlust keine neuen Trades bis morgen
+  max_drawdown: 0.15                # ab 15 % unter dem Höchststand: Not-Aus, alle Positionen schließen
+  atr_period: 14
+  sl_atr_mult: 2.0                  # Stop-Loss = 2 x ATR
+  tp_atr_mult: 3.0                  # Take-Profit = 3 x ATR (0 = keiner)
+  trailing_atr_mult: 0.0            # Trailing-Stop in ATR (0 = aus)
+  max_spread_points: 0              # 0 = kein Spread-Filter
+  allow_min_lot_override: false
+
+learning:
+  enabled: true
+  decay: 0.99                       # Gedächtnis: 0.99 ≈ letzte ~100 Bars zählen am meisten
+  temperature: 1.0                  # niedriger = KI setzt stärker auf die aktuell beste Strategie
+  entry_threshold: 0.35             # Mindest-Konsens für einen Einstieg (0..1)
+  exit_threshold: 0.05              # darunter wird die Position geschlossen
+  optimize_every_hours: 168         # Parameter wöchentlich neu optimieren
+  optimize_trials: 40
+  min_improvement: 0.1              # neue Parameter nur bei klarer Verbesserung (Out-of-Sample)
+  retrain_every_hours: 168          # ML-Modell wöchentlich neu trainieren
+  ml_enabled: true
+  ml_horizon: 5                     # Prognose für die nächsten 5 Bars
+  ml_threshold: 0.55                # ML handelt nur bei >= 55 % Wahrscheinlichkeit
+  train_bars: 5000
+  min_train_bars: 1000
+
+internet:
+  enabled: true
+  yahoo_symbols: {}                 # eigene Zuordnung, z.B. {GER40: "^GDAXI"}
+  context_symbols:                  # andere Märkte als Lernmerkmale
+    VIX: "^VIX"
+    SPX: "^GSPC"
+    DXY: "DX-Y.NYB"
+    US10Y: "^TNX"
+  news_enabled: true
+  news_feeds:
+    - https://www.fxstreet.com/rss/news
+    - https://www.cnbc.com/id/100003114/device/rss/rss.html
+    - https://finance.yahoo.com/news/rssindex
+    - https://www.federalreserve.gov/feeds/press_all.xml
+    - https://www.ecb.europa.eu/rss/press.html
+  news_analyzer: lexicon            # lexicon (kostenlos) oder claude (braucht ANTHROPIC_API_KEY)
+  claude_model: claude-opus-5-5
+  news_refresh_minutes: 15
+  news_max_age_hours: 12
+  news_block_threshold: 0.5         # Einstieg blockieren, wenn die Nachrichtenlage klar dagegen spricht
+  calendar_enabled: true
+  calendar_url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+  calendar_impacts: [High]
+  calendar_block_before_minutes: 30
+  calendar_block_after_minutes: 30
+  symbol_currencies: {}             # z.B. {GER40: [EUR]}
+
+paper:
+  initial_balance: 10000
+  data_source: yahoo                # yahoo | csv | synthetic (synthetic nur für Backtests)
+  csv_dir: data                     # CSV-Dateien: data/EURUSD_H1.csv oder data/EURUSD.csv
+  symbol_specs: {}                  # z.B. {EURUSD: {spread_points: 12}}
