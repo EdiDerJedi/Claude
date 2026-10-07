@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -30,20 +31,36 @@ def _heartbeat(state, **kw):
 
 
 def test_bot_states(tmp_path):
+    from tradingai.status import InstanceLock
+
     assert read_bot_state(tmp_path)["state"] == "never"
     _heartbeat(tmp_path)
     assert read_bot_state(tmp_path)["state"] == "running"
+    _heartbeat(tmp_path, phase="wartet auf MetaTrader 5", last_error="IPC timeout")
+    st = read_bot_state(tmp_path)
+    assert st["state"] == "waiting" and st["last_error"] == "IPC timeout"
+    long_ago = iso(datetime.now(timezone.utc) - timedelta(hours=2))
+    _heartbeat(tmp_path, started_at=long_ago, last_loop=long_ago)  # Herzschlag ja, Hauptschleife steht
+    assert read_bot_state(tmp_path)["state"] == "stalled"
     old = iso(datetime.now(timezone.utc) - timedelta(minutes=5))
-    _heartbeat(tmp_path, time=old)  # eigener Prozess lebt -> reagiert nicht
+    running = InstanceLock(tmp_path)
+    assert running.acquire()  # ein Bot hält die Sperre, meldet sich aber nicht
+    _heartbeat(tmp_path, time=old)
     assert read_bot_state(tmp_path)["state"] == "unresponsive"
-    _heartbeat(tmp_path, time=old, pid=2_000_000_000)  # Prozess existiert nicht mehr
-    assert read_bot_state(tmp_path)["state"] == "crashed"
+    running.release()
+    # Sperre frei -> Bot ist tot, egal was die (evtl. wiederverwendete) PID sagt
+    request_stop(tmp_path)
+    st = read_bot_state(tmp_path)
+    assert st["state"] == "crashed" and not (tmp_path / "stop.request").exists()
     _heartbeat(tmp_path, stopped=True)
     assert read_bot_state(tmp_path)["state"] == "stopped"
+    _heartbeat(tmp_path, stopped=True, error=True, phase="Echtgeld-Sperre ausgelöst")
+    assert read_bot_state(tmp_path)["state"] == "stopped_error"
 
 
 def test_bot_status_heartbeat_stop_request_and_equity(tmp_path):
-    request_stop(tmp_path)  # liegengebliebene Anfrage darf neuen Bot nicht stoppen
+    request_stop(tmp_path)
+    os.utime(tmp_path / "stop.request", (0, 0))  # liegengebliebene Anfrage aus einem früheren Lauf
     status = BotStatus(tmp_path, "paper", interval=0.05, equity_every=300)
     status.start()
     assert not status.stop_requested()
@@ -214,3 +231,164 @@ def test_second_dashboard_reuses_running_one(server, monkeypatch):
     other = dash_mod.Dashboard(cfg, None)
     other.serve(open_browser=True)  # kehrt sofort zurück, weil schon ein Dashboard läuft
     assert opened == [base + "/"] and other.server is None
+
+
+def test_stop_during_startup_is_honoured(tmp_path, monkeypatch):
+    # Dashboard startet den Bot und der Nutzer klickt sofort "Bot stoppen"
+    monkeypatch.setenv("TRADINGAI_SPAWNED_AT", repr(time.time() - 5))
+    request_stop(tmp_path)  # kam nach dem Start, aber bevor der Bot geladen war
+    status = BotStatus(tmp_path, "paper")
+    status.start()
+    assert status.stop_requested()
+    status.stop()
+
+
+def test_run_exits_immediately_when_stop_requested_before_start(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    state.mkdir()
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"symbols: [EURUSD]\nstate_dir: {state}\ninternet: {{enabled: false}}\n"
+                        f"paper: {{data_source: csv, csv_dir: {tmp_path / 'fehlt'}}}\n")
+    monkeypatch.setenv("TRADINGAI_SPAWNED_AT", repr(time.time() - 5))
+    request_stop(state)
+    t0 = time.time()
+    assert main(["-c", str(cfg_file), "run"]) == 0
+    assert time.time() - t0 < 10  # keine Verbindungsversuche, kein Handel
+    hb = json.loads((state / "heartbeat.json").read_text())
+    assert hb["stopped"] is True and hb["error"] is False
+
+
+def test_account_switch_starts_statistics_fresh(cfg, tmp_path):
+    df = synthetic_ohlc(800, "H1", seed=2)
+    broker = BacktestBroker({"EURUSD": df}, {"EURUSD": default_symbol_info("EURUSD")}, 100_000, start=600)
+    store = StateStore(tmp_path)
+    (tmp_path / "trades.csv").write_text("ticket,profit\n1,5\n")
+    (tmp_path / "equity_history.csv").write_text("time,balance,equity\n")
+    store.data["account_key"] = "111@Alt-Server"
+    store.data["risk"].update(peak_equity=1_000_000, day_start_equity=1_000_000, day="2026-10-07")
+    cfg.mode = "paper"
+    engine = TradingEngine(cfg, broker, store, learn=False, raise_errors=True)
+    engine.step()
+    assert store.data["account_key"] == "paper"
+    assert store.data["risk"]["peak_equity"] == pytest.approx(100_000, rel=0.01)  # kein Not-Aus durch altes Konto
+    assert not store.data["risk"]["killed"]
+    assert not (tmp_path / "trades.csv").exists()
+    archived = list((tmp_path / "archiv").glob("111_Alt_Server_*/trades.csv"))
+    assert archived and store.data["account_notice"]["from"] == "111@Alt-Server"
+
+
+def test_equity_downsampling_keeps_dips_and_filters_range(tmp_path):
+    path = tmp_path / "equity_history.csv"
+    start = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    lines = ["time,balance,equity"]
+    for i in range(30 * 288):  # 30 Tage alle 5 Minuten
+        t = start + timedelta(minutes=5 * i)
+        eq = 93_000 if i == 5000 else 100_000 + (i % 7)
+        lines.append(f"{iso(t)},100000,{eq}")
+    path.write_text("\n".join(lines) + "\n")
+    reader = dash_mod.EquityReader(path)
+    full = reader.series("all")
+    assert len(full["points"]) <= 502 and min(p["equity"] for p in full["points"]) == 93_000
+    week = reader.series("7d")
+    first = datetime.fromisoformat(week["first"].replace("Z", "+00:00"))
+    assert first >= start + timedelta(days=22)
+    assert reader.series("unsinn")["range"] == "7d"
+
+
+def test_dashboard_reloads_changed_config(server):
+    d, base, state = server
+    cfg_path = Path(d.config_path)
+    cfg_path.write_text("symbols: [EURUSD.m, XAUUSD.m]\n")
+    os.utime(cfg_path, (time.time() + 5, time.time() + 5))
+    data = json.loads(_req(base + "/api/status")[2])
+    assert data["config"]["symbols"] == ["EURUSD.m", "XAUUSD.m"]
+    cfg_path.write_text("mode: kaputt\n")
+    os.utime(cfg_path, (time.time() + 10, time.time() + 10))
+    data = json.loads(_req(base + "/api/status")[2])
+    assert "mode" in data["config"]["error"]
+    assert _req(base + "/api/bot/start", "POST", {"X-TradingAI-Token": d.token})[0] == 400
+
+
+def test_failed_start_only_shows_this_launch_and_running_heartbeat_wins(server, monkeypatch):
+    d, base, state = server
+    (state / "bot_stderr.log").write_text("alter Fehler von gestern\n")
+
+    class DeadProc:
+        pid = 1
+
+        def poll(self):
+            return 1
+
+    def fake_popen(cmd, **kwargs):
+        kwargs["stderr"].write(b"ValueError: mode muss paper oder live sein\n")
+        return DeadProc()
+
+    monkeypatch.setattr(dash_mod.subprocess, "Popen", fake_popen)
+    assert _req(base + "/api/bot/start", "POST", {"X-TradingAI-Token": d.token})[0] == 202
+    bot = json.loads(_req(base + "/api/status")[2])["bot"]
+    assert bot["state"] == "failed" and bot["details"] == ["ValueError: mode muss paper oder live sein"]
+    _heartbeat(state, launch_id="anderer-start")  # Bot läuft inzwischen (z.B. über bot_starten.bat)
+    assert json.loads(_req(base + "/api/status")[2])["bot"]["state"] == "running"
+
+
+def test_own_launch_recognised_by_launch_id(server, monkeypatch):
+    d, base, state = server
+
+    class LauncherProc:  # unter Windows: venv-Starter mit anderer PID als der eigentliche Bot
+        pid = 999_999
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(dash_mod.subprocess, "Popen", lambda cmd, **kw: LauncherProc())
+    _req(base + "/api/bot/start", "POST", {"X-TradingAI-Token": d.token})
+    assert json.loads(_req(base + "/api/status")[2])["bot"]["state"] == "starting"
+    _heartbeat(state, launch_id=d.launch_id, pid=12345)
+    assert json.loads(_req(base + "/api/status")[2])["bot"]["state"] == "running"
+
+
+def test_reset_kill_switch_updates_snapshot(server):
+    d, base, state = server
+    store = StateStore(state)
+    store.data["risk"].update(killed=True, kill_reason="Drawdown")
+    store.save()
+    write_json_atomic(state / "status.json", {"risk": {"killed": True, "kill_reason": "Drawdown"}})
+    assert _req(base + "/api/killswitch/reset", "POST", {"X-TradingAI-Token": d.token})[0] == 200
+    assert json.loads(_req(base + "/api/status")[2])["snapshot"]["risk"]["killed"] is False
+
+
+def test_settings_and_bad_requests(server):
+    d, base, state = server
+    tok = {"X-TradingAI-Token": d.token}
+    req = urllib.request.Request(base + "/api/settings", method="POST", data=b'{"autostart_bot": true}',
+                                 headers={**tok, "Content-Type": "application/json"})
+    with _LOCAL.open(req, timeout=5) as resp:
+        assert resp.status == 200
+    assert json.loads(_req(base + "/api/status")[2])["prefs"]["autostart_bot"] is True
+    if os.name != "nt":
+        req = urllib.request.Request(base + "/api/settings", method="POST", data=b'{"autostart_windows": true}',
+                                     headers=tok)
+        try:
+            _LOCAL.open(req, timeout=5)
+            raise AssertionError("sollte 400 liefern")
+        except urllib.error.HTTPError as err:
+            assert err.code == 400
+    assert _req(base + "/api/bot/stop", "POST", {"X-TradingAI-Token": "äöü".encode().decode("latin-1")})[0] == 403
+
+
+def test_dashboard_refuses_non_local_host(tmp_path, monkeypatch):
+    cfg = Config()
+    cfg.state_dir = str(tmp_path / "state")
+    cfg.dashboard.host = "0.0.0.0"
+    cfg.dashboard.port = _free_port()
+    d = dash_mod.Dashboard(cfg, None, cwd=tmp_path)
+    t = threading.Thread(target=d.serve, kwargs={"open_browser": False}, daemon=True)
+    t.start()
+    for _ in range(50):
+        if d.server is not None:
+            break
+        time.sleep(0.05)
+    try:
+        assert d.server.server_address[0] == "127.0.0.1"
+    finally:
+        d.server.shutdown()

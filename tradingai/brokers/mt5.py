@@ -278,17 +278,47 @@ class MT5Broker(Broker):
                 return float(d.price), datetime.fromtimestamp(d.time, tz=timezone.utc).replace(tzinfo=None)
         return 0.0, fallback
 
+    def _close_reason(self, deal) -> str:
+        """Warum wurde die Position geschlossen? MT5 kennzeichnet das im Feld reason."""
+        mt5 = self.mt5
+        code = getattr(deal, "reason", None)
+        if code == getattr(mt5, "DEAL_REASON_SL", 4):
+            return "sl"
+        if code == getattr(mt5, "DEAL_REASON_TP", 5):
+            return "tp"
+        if code == getattr(mt5, "DEAL_REASON_SO", 6):
+            return "stopout"
+        if code in (getattr(mt5, "DEAL_REASON_CLIENT", 0), getattr(mt5, "DEAL_REASON_MOBILE", 1),
+                    getattr(mt5, "DEAL_REASON_WEB", 2)):
+            return "manual"
+        comment = (deal.comment or "").strip()
+        low = comment.lower()
+        if low.startswith("[sl"):
+            return "sl"
+        if low.startswith("[tp"):
+            return "tp"
+        if low.startswith("[so"):
+            return "stopout"
+        return comment or "signal"
+
     def pop_closed_trades(self) -> list[ClosedTrade]:
         now = datetime.now(timezone.utc)
-        # Deal-Zeiten sind Serverzeit (oft UTC+2/+3) – daher großzügiges Fenster; doppelte
-        # Einträge verhindert die gespeicherte Ticket-Liste.
-        deals = self.mt5.history_deals_get(now - timedelta(days=3), now + timedelta(days=2))
+        # Deal-Zeiten sind Serverzeit (oft UTC+2/+3) – daher großzügiges Fenster. War der Bot länger
+        # aus, ab dem zuletzt erfassten Deal suchen (max. 90 Tage zurück). Doppelte Einträge
+        # verhindert die gespeicherte Ticket-Liste.
+        since = now - timedelta(days=3)
+        last = self.journal.get("last_deal_time")
+        if last:
+            since = min(since, max(datetime.fromtimestamp(int(last), tz=timezone.utc) - timedelta(days=1),
+                                   now - timedelta(days=90)))
+        deals = self.mt5.history_deals_get(since, now + timedelta(days=2))
         own = sorted((d for d in deals or [] if d.magic == self.cfg.magic and d.entry == self.mt5.DEAL_ENTRY_OUT),
                      key=lambda d: (d.time, d.ticket))
         seen = set(self.journal.get("seen_deals", []))
         first_run = "seen_deals" not in self.journal
         out = []
         for d in own:
+            self.journal["last_deal_time"] = max(int(self.journal.get("last_deal_time") or 0), int(d.time))
             if d.ticket in seen:
                 continue
             seen.add(d.ticket)
@@ -301,7 +331,8 @@ class MT5Broker(Broker):
             out.append(ClosedTrade(
                 ticket=int(d.position_id), symbol=d.symbol, direction=direction, volume=float(d.volume),
                 open_price=open_price, close_price=float(d.price), open_time=open_time, close_time=when,
-                profit=float(d.profit + d.commission + d.swap), reason=d.comment or "", comment=d.comment or "",
+                profit=float(d.profit + d.commission + d.swap), reason=self._close_reason(d),
+                comment=d.comment or "",
             ))
         self.journal["seen_deals"] = sorted(seen)[-2000:]
         return out

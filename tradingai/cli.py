@@ -18,6 +18,7 @@ import signal
 import sys
 import time
 import zlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .backtest import run_backtest
@@ -27,7 +28,7 @@ from .data.symbols import calendar_currencies, default_symbol_info, yahoo_ticker
 from .engine import TradingEngine
 from .risk import RiskManager
 from .state import StateStore
-from .status import BotStatus
+from .status import BotStatus, InstanceLock, iso
 from .timeframes import minutes
 
 log = logging.getLogger("tradingai")
@@ -196,46 +197,17 @@ def _disable_quickedit() -> None:
         pass
 
 
-class InstanceLock:
-    """Verhindert, dass zwei Bots (oder Bot und `train`) gleichzeitig denselben state-Ordner benutzen."""
-
-    def __init__(self, state_dir: str):
-        self.path = Path(state_dir) / "bot.lock"
-        self.fh = None
-
-    def acquire(self) -> bool:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.fh = open(self.path, "a+")
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                self.fh.seek(0)
-                msvcrt.locking(self.fh.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            self.fh.close()
-            self.fh = None
-            return False
-        return True
-
-    def release(self) -> None:
-        if self.fh is not None:
-            self.fh.close()  # Sperre wird mit dem Schließen bzw. Prozessende freigegeben
-            self.fh = None
-
-
 def _lock_or_exit(cfg: Config) -> InstanceLock:
     lock = InstanceLock(cfg.state_dir)
-    if not lock.acquire():
-        raise SystemExit(
-            f"Der Bot läuft bereits mit dem Ordner '{cfg.state_dir}'. Erst das andere Bot-Fenster mit Strg+C "
-            "beenden – zwei Bots auf demselben Konto würden sich gegenseitig stören."
-        )
-    return lock
+    # Kurz wiederholen: Das Dashboard prüft die Sperre manchmal für einen Augenblick selbst
+    for _ in range(20):
+        if lock.acquire():
+            return lock
+        time.sleep(0.1)
+    msg = (f"Der Bot läuft bereits mit dem Ordner '{cfg.state_dir}'. Erst den laufenden Bot beenden – im Dashboard "
+           "mit „Bot stoppen“ oder im Bot-Fenster mit Strg+C. Zwei Bots auf demselben Konto würden sich stören.")
+    log.error(msg)
+    raise SystemExit(msg)
 
 
 def _sleep(seconds: float, stop: dict, status: BotStatus | None = None) -> None:
@@ -268,6 +240,11 @@ def cmd_run(args) -> int:
     log.warning(DISCLAIMER)
     status = BotStatus(cfg.state_dir, cfg.mode)
     status.start()
+    if status.stop_requested():  # "Bot stoppen" kam schon, während der Bot noch lud
+        log.info("Stopp-Anfrage vom Dashboard erhalten – der Bot wird nicht gestartet.")
+        status.stop("beendet")
+        lock.release()
+        return 0
 
     stop = {"flag": False}
 
@@ -286,16 +263,24 @@ def cmd_run(args) -> int:
         while broker is None and not stop["flag"]:
             try:
                 broker = make_broker(cfg, store)
+                status.last_error = ""
             except (ConnectionError, OSError, RuntimeError) as exc:
                 if args.once:
                     raise
                 what = "MetaTrader 5 ist noch nicht bereit" if cfg.mode == "live" else "Kursdaten nicht ladbar"
                 hint = " Ist MT5 gestartet und eingeloggt?" if cfg.mode == "live" else ""
                 log.warning("%s (%s) – neuer Versuch in 30 Sekunden.%s", what, exc, hint)
+                status.last_error = str(exc)
                 status.phase = "wartet auf MetaTrader 5" if cfg.mode == "live" else "wartet auf Kursdaten"
                 _sleep(30, stop, status)
-    except BaseException:
-        status.stop("Start fehlgeschlagen")
+    except SystemExit as exc:
+        log.error("%s", exc)
+        status.stop("Echtgeld-Sperre ausgelöst" if "ECHTGELD" in str(exc) else "Start fehlgeschlagen", error=True)
+        lock.release()
+        raise
+    except BaseException as exc:
+        log.error("Start fehlgeschlagen: %s", exc, exc_info=True)
+        status.stop("Start fehlgeschlagen", error=True)
         lock.release()
         raise
     if broker is None:
@@ -313,9 +298,12 @@ def cmd_run(args) -> int:
     log.info("Bot gestartet: Modus %s, Symbole %s, Timeframe %s", cfg.mode.upper(), ", ".join(cfg.symbols),
              cfg.timeframe)
 
-    reason = "beendet"
+    reason, failed = "beendet", False
     try:
         while not stop["flag"]:
+            if status.stop_requested():
+                log.info("Stopp-Anfrage vom Dashboard erhalten – beende ... (offene Positionen behalten ihren SL/TP)")
+                break
             try:
                 if cfg.mode == "live":
                     check_account(cfg, broker, announce=False)
@@ -324,9 +312,11 @@ def cmd_run(args) -> int:
                     log.info("Warte auf die nächste %s-Kerze (Prüfung alle %d Sekunden). Beenden mit Strg+C.",
                              cfg.timeframe, cfg.loop_seconds)
                 status.phase = f"wartet auf die nächste {cfg.timeframe}-Kerze"
+                status.last_error = ""
                 _publish(engine, status)
             except ConnectionError as exc:
                 status.phase = "Verbindungsproblem – verbindet neu"
+                status.last_error = str(exc)
                 log.error("Verbindungsproblem: %s – verbinde neu ...", exc)
                 if hasattr(broker, "reconnect"):
                     try:
@@ -334,22 +324,27 @@ def cmd_run(args) -> int:
                         check_account(cfg, broker)
                         log.info("Wieder mit MetaTrader 5 verbunden.")
                     except ConnectionError as exc2:
+                        status.last_error = str(exc2)
                         log.error("Neu verbinden fehlgeschlagen (%s) – nächster Versuch gleich.", exc2)
-            except Exception:
+            except Exception as exc:
+                status.last_error = str(exc)
                 log.exception("Unerwarteter Fehler im Durchlauf")
+            status.last_loop = iso(datetime.now(timezone.utc))
             if args.once:
                 break
             _sleep(cfg.loop_seconds, stop, status)
-    except SystemExit:
-        reason = "Echtgeld-Sperre ausgelöst"
+    except SystemExit as exc:
+        reason, failed = ("Echtgeld-Sperre ausgelöst" if "ECHTGELD" in str(exc) else "beendet (SystemExit)"), True
+        log.error("%s", exc)
         raise
     except BaseException:
-        reason = "unerwartet beendet"
+        reason, failed = "unerwartet beendet", True
+        log.exception("Der Bot wurde wegen eines Fehlers beendet")
         raise
     finally:
         store.save()
         broker.shutdown()
-        status.stop(reason)
+        status.stop(reason, error=failed)
         lock.release()
     return 0
 
@@ -464,12 +459,21 @@ def _message_box(text: str) -> None:
 def cmd_dashboard(args) -> int:
     from .dashboard import Dashboard
 
-    cfg = load_config(args.config) if args.config else Config()
+    config_error = ""
+    cfg = Config()
+    if args.config:
+        try:
+            cfg = load_config(args.config)
+        except Exception as exc:  # Dashboard trotzdem öffnen und den Fehler dort anzeigen
+            config_error = str(exc)
     if args.port:
         cfg.dashboard.port = args.port
-    setup_logging(cfg.log_level, cfg.state_dir, log_name="dashboard.log")
     try:
-        Dashboard(cfg, args.config).serve(open_browser=cfg.dashboard.open_browser and not args.no_browser)
+        setup_logging(cfg.log_level, cfg.state_dir, log_name="dashboard.log")
+        if config_error:
+            log.error("config.yaml enthält einen Fehler: %s", config_error)
+        Dashboard(cfg, args.config, config_error=config_error).serve(
+            open_browser=cfg.dashboard.open_browser and not args.no_browser)
     except Exception as exc:
         log.exception("Dashboard konnte nicht gestartet werden")
         _message_box(f"Das Dashboard konnte nicht gestartet werden:\n{exc}")
@@ -477,7 +481,24 @@ def cmd_dashboard(args) -> int:
     return 0
 
 
+def _ensure_stderr() -> None:
+    """Ohne Konsolenfenster (pythonw, Aufgabenplanung) gibt es kein stderr: Fehlermeldungen und
+    Abstürze würden spurlos verschwinden. Dann in tradingai_fehler.log im Projektordner schreiben."""
+    if sys.stderr is None:
+        try:
+            sys.stderr = open("tradingai_fehler.log", "a", encoding="utf-8", buffering=1)
+        except OSError:
+            return
+    try:
+        import faulthandler
+
+        faulthandler.enable(sys.stderr)
+    except Exception:
+        pass
+
+
 def main(argv=None) -> int:
+    _ensure_stderr()
     _safe_console()
     parser = argparse.ArgumentParser(prog="tradingai", description="Selbstlernender Trading-Bot für MetaTrader 5")
     parser.add_argument("-c", "--config", default="config.yaml", help="Pfad zur Konfiguration (Default: config.yaml)")

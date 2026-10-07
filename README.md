@@ -221,22 +221,29 @@ Statt im schwarzen Fenster lässt sich alles im Browser bedienen: **Doppelklick 
 „TradingAI Dashboard“ auf dem Desktop** (legt `install.bat` an) oder auf
 `dashboard_starten.bat`. Es öffnet sich <http://127.0.0.1:8765> mit:
 
-- **Bot-Status** (läuft / gestoppt / reagiert nicht / unerwartet beendet) und den Knöpfen
-  **Bot starten** und **Bot stoppen** – der Bot läuft dann unsichtbar im Hintergrund
-- **Equity, Kontostand, heutiger Gewinn/Verlust, Rückgang vom Höchststand** (mit Not-Aus-Grenze),
-  Trefferquote und Gesamtergebnis
-- **Kapitalverlauf** als Diagramm (mit Tabellenansicht)
+- **Bot-Status** (läuft / wartet auf MetaTrader 5 / gestoppt / unerwartet beendet …) und den
+  Knöpfen **Bot starten** und **Bot stoppen** – der Bot läuft dann unsichtbar im Hintergrund.
+  Auch der Browser-Tab zeigt den Zustand (grüner Punkt = läuft, ⚠ = Problem).
+- **Equity, Kontostand, Gewinn/Verlust des Tages, Rückgang vom Höchststand** (mit Not-Aus-Grenze),
+  Trefferquote und Gesamtergebnis. Läuft der Bot nicht, werden die Werte gedimmt und als
+  „letzter Stand“ gekennzeichnet.
+- **Kapitalverlauf** als Diagramm für 24 Stunden, 7 oder 30 Tage oder alles (mit Tabellenansicht)
 - **Offene Positionen** mit Stop-Loss, Take-Profit und aktuellem Gewinn/Verlust
-- **Letzte Trades** mit Grund (Stop-Loss, Take-Profit, Signal)
+- **Letzte Trades** mit Grund (Stop-Loss, Take-Profit, Signal, manuell geschlossen)
 - **Strategien & Lernen** je Symbol: Konsens, Gewicht jeder Strategie, Status des KI-Modells,
   gelernte Einstellungen
 - **Wichtige Wirtschaftstermine**, **Nachrichtenlage** und das **Protokoll**
-- Hinweise bei Not-Aus (mit Knopf zum Zurücksetzen), Echtgeld-Konto oder Tageslimit
+- **Hinweise** bei Not-Aus (mit Knopf zum Zurücksetzen), Fehlern in `config.yaml`, nicht
+  erreichbarem MetaTrader 5, ausgeschaltetem „Algo Trading“, Echtgeld-Konto, Tageslimit,
+  Wochenende und wenn der Bot unerwartet beendet wurde (mit Fehlermeldung)
+- **Einstellungen:** `config.yaml` im Editor öffnen, Bot automatisch mit dem Dashboard starten
+  und Dashboard mit Windows starten (siehe unten)
 
 Das Dashboard und der Bot sind getrennt: **Browser oder Dashboard schließen stoppt den Bot
-nicht.** Gestoppt wird er nur mit „Bot stoppen“ (oder `Strg+C`, wenn er im Fenster läuft). Das
-Dashboard ist nur auf diesem PC erreichbar. Läuft der Bot schon über `bot_starten.bat`, zeigt das
-Dashboard ihn ebenfalls an und kann ihn stoppen.
+nicht.** Gestoppt wird er mit „Bot stoppen“ (oder `Strg+C`, wenn er in einem Fenster läuft). Hängt
+ein vom Dashboard gestarteter Bot, erscheint zusätzlich „Zwangsweise beenden“. Das Dashboard ist
+nur auf diesem PC erreichbar. Läuft der Bot schon über `bot_starten.bat`, zeigt das Dashboard ihn
+ebenfalls an und kann ihn stoppen.
 
 ### Dauerhaft laufen lassen
 
@@ -245,24 +252,27 @@ Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
 - **Energieoptionen:** Windows-Einstellungen → System → „Energie“ bzw. „Energie & Akku“
   (je nach Version auch „Stromversorgung & Akku“) → Bildschirm-/Energiespar-Timeouts →
   Energiesparmodus bei Netzbetrieb auf **Nie**. Tipp: in der Windows-Suche „Energiesparmodus“ eintippen.
-- **Automatisch starten (unsichtbar im Hintergrund):** Aufgabenplanung → „Einfache Aufgabe
-  erstellen“ → Trigger „Beim Anmelden“ → Aktion „Programm starten“ → Programm
-  `C:\TradingAI\.venv\Scripts\pythonw.exe`, Argumente `-m tradingai run`, Starten in
-  `C:\TradingAI`. (Mit sichtbarem Fenster stattdessen `C:\TradingAI\bot_starten.bat`.) Auf der
-  letzten Seite den Haken bei „Beim Klicken auf „Fertig stellen“ die Eigenschaften für diese
-  Aufgabe öffnen“ setzen, dann:
+- **Automatisch starten (am einfachsten):** im Dashboard auf **„Einstellungen“** klicken und beide
+  Haken setzen – „Bot automatisch starten, wenn das Dashboard startet“ und „Dashboard beim
+  Windows-Start im Hintergrund starten“. Nach jedem Neustart läuft der Bot dann von selbst weiter.
+  MetaTrader 5 wird beim Verbinden in der Regel automatisch mitgestartet; falls nicht, MT5 ebenfalls
+  in den Autostart legen (`Win+R` → `shell:startup` → Verknüpfung zu MT5 hineinlegen). Startet der
+  Bot vor MT5, wartet er, bis MT5 bereit ist.
+- **Alternative über die Aufgabenplanung:** „Einfache Aufgabe erstellen“ → Trigger „Beim
+  Anmelden“ → Aktion „Programm starten“ → Programm `C:\TradingAI\.venv\Scripts\pythonw.exe`,
+  Argumente `-m tradingai run`, Starten in `C:\TradingAI`. Auf der letzten Seite den Haken bei
+  „Beim Klicken auf „Fertig stellen“ die Eigenschaften für diese Aufgabe öffnen“ setzen, dann:
   - Reiter **„Einstellungen“**: Haken bei **„Aufgabe beenden, falls Ausführung länger als:
     3 Tage“ entfernen** – sonst beendet Windows den Bot nach drei Tagen.
   - Reiter **„Bedingungen“**: Haken bei „Aufgabe nur starten, falls Computer im
     Netzbetrieb ausgeführt wird“ entfernen (wichtig bei Laptops).
-
-  MetaTrader 5 muss ebenfalls laufen, z. B. über den Autostart-Ordner (`Win+R` →
-  `shell:startup` → Verknüpfung zu MT5 hineinlegen). Startet der Bot vor MT5, wartet er
-  automatisch, bis MT5 bereit ist.
-- **Beenden:** im Bot-Fenster `Strg+C` drücken. Die Frage „Batchvorgang abbrechen (J/N)?“
-  mit **`N`** beantworten – dann bleibt das Fenster offen und zeigt „Der Bot wurde beendet.“
-  (`J` schließt es sofort; beides ist ungefährlich). Offene Positionen behalten ihren
+- **Beenden:** im Dashboard **„Bot stoppen“**. Läuft der Bot in einem Fenster (`bot_starten.bat`),
+  geht auch `Strg+C`; die Frage „Batchvorgang abbrechen (J/N)?“ dann mit **`N`** beantworten – das
+  Fenster bleibt offen und zeigt „Der Bot wurde beendet.“ Offene Positionen behalten immer ihren
   Stop-Loss und Take-Profit.
+- **Kontowechsel:** Wechselst du das Konto (z. B. von Paper auf das MT5-Demokonto oder auf ein neues
+  Demokonto), erkennt der Bot das, legt die alte Statistik im Ordner `state\archiv` ab und beginnt
+  Kapitalverlauf, Höchststand und Trade-Statistik neu.
 
 ## Befehle
 
@@ -316,10 +326,11 @@ erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
 | `retcode=10019` | Nicht genug freie Margin – Risiko senken oder Konto aufladen (Demo). |
 | `retcode=10016` | Stops ungültig – meist bei sehr hohem Spread; später erneut. |
 | `Symbol … nicht verfügbar` | Symbolnamen genau wie in der MT5-Marktübersicht schreiben (z. B. `EURUSD.m`). |
-| `Der Bot läuft bereits mit dem Ordner …` | Es ist schon ein Bot-Fenster offen (evtl. minimiert oder über die Aufgabenplanung gestartet). Erst dieses mit `Strg+C` beenden. `train` und `reset-killswitch` gehen nur, wenn der Bot gestoppt ist. |
+| `Der Bot läuft bereits mit dem Ordner …` | Es läuft schon ein Bot – evtl. unsichtbar im Hintergrund (über das Dashboard, den Autostart oder die Aufgabenplanung gestartet). Im Dashboard „Bot stoppen“ klicken bzw. ein offenes Bot-Fenster mit `Strg+C` beenden. `train` und `reset-killswitch` gehen nur, wenn der Bot gestoppt ist. |
 | `MetaTrader 5 ist noch nicht bereit … neuer Versuch in 30 Sekunden` | MT5 starten und einloggen – der Bot verbindet sich dann von selbst. |
 | Im Fenster tut sich nichts, Titel beginnt mit „Auswählen“ | Es wurde Text markiert; `Esc` drücken. (Der Bot schaltet diese Windows-Funktion beim Start normalerweise selbst ab.) |
 | `trades.csv ist gerade geöffnet (Excel?)` | Excel schließen – die Einträge werden automatisch nachgetragen. |
+| Doppelklick auf das Dashboard tut nichts | In `tradingai_fehler.log` bzw. `state\dashboard.log` im Projektordner nachsehen. Meist ein Tippfehler in `config.yaml` – das Dashboard zeigt ihn beim nächsten Start als Hinweis an. |
 | Installation scheitert immer wieder | Den Ordner `.venv` löschen und `install.bat` erneut starten. |
 | `zu wenig Historie zum Lernen` | In MT5 einen Chart des Symbols im passenden Zeitrahmen öffnen und mit `Pos1` zurückscrollen; der Bot versucht es bei jeder neuen Kerze erneut. |
 | Fehler beim Laden von Yahoo-Daten | Internetverbindung/Firewall prüfen und später erneut versuchen. |

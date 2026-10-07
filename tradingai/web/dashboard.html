@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TradingAI Dashboard</title>
+<link rel="icon" id="favicon" href="data:,">
 <style>
   .viz-root {
     color-scheme: light;
@@ -11,7 +12,7 @@
     --surface: #fcfcfb;
     --ink: #0b0b0b;
     --ink-2: #52514e;
-    --muted: #898781;
+    --muted: #6e6c66;
     --grid: #e1e0d9;
     --axis: #c3c2b7;
     --border: rgba(11, 11, 11, 0.10);
@@ -96,7 +97,7 @@
   .muted { color: var(--ink-2); }
   .small { font-size: 12.5px; }
   .num { font-variant-numeric: tabular-nums; }
-  button { font: inherit; }
+  button, input { font: inherit; }
 
   /* ---------------------------------------------------------------- Kopf */
   .top {
@@ -110,27 +111,36 @@
   }
   .badge .sw { width: 8px; height: 8px; border-radius: 50%; }
   .account { color: var(--ink-2); font-size: 13px; }
-  .botbox { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .botbox { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
   .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
   .status .icon {
     width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
     font-size: 12px; color: #fff; background: var(--muted);
   }
-  .status[data-s="running"] .icon { background: var(--good); }
-  .status[data-s="starting"] .icon, .status[data-s="unresponsive"] .icon { background: var(--warning); color: #0b0b0b; }
-  .status[data-s="crashed"] .icon { background: var(--serious); color: #0b0b0b; }
-  .status[data-s="failed"] .icon, .status[data-s="killed"] .icon { background: var(--critical); }
-  .detail { color: var(--ink-2); font-size: 12.5px; max-width: 360px; }
+  .status[data-k="good"] .icon { background: var(--good); }
+  .status[data-k="warning"] .icon { background: var(--warning); color: #0b0b0b; }
+  .status[data-k="serious"] .icon { background: var(--serious); color: #0b0b0b; }
+  .status[data-k="critical"] .icon { background: var(--critical); }
+  .detail { color: var(--ink-2); font-size: 12.5px; max-width: 380px; }
   .btn {
     border: 1px solid var(--border); background: var(--surface); color: var(--ink);
     padding: 7px 14px; border-radius: 8px; cursor: pointer; min-height: 36px;
   }
   .btn:hover:not(:disabled) { background: var(--wash); }
-  .btn:focus-visible, .chart-svg:focus-visible, summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  .btn:focus-visible, .chart-svg:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
   .btn.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
   .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--series-1); }
+  .btn.danger { border-color: var(--critical); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); padding: 4px 8px; min-height: 0; }
+  .btn[aria-pressed="true"] { background: var(--wash); border-color: var(--axis); color: var(--ink); font-weight: 600; }
+
+  /* ------------------------------------------------------------- Einstellungen */
+  #settings { margin-bottom: 16px; }
+  #settings[hidden] { display: none; }
+  .setting { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; }
+  .setting input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
+  .setting .hint { color: var(--ink-2); font-size: 12.5px; }
 
   /* ------------------------------------------------------------- Hinweise */
   #alerts { display: grid; gap: 8px; margin-bottom: 16px; }
@@ -154,27 +164,31 @@
   }
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .section { margin-top: 16px; }
-  .grid-2 { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .grid-2.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  @media (max-width: 900px) { .grid-2, .grid-2.even { grid-template-columns: minmax(0, 1fr); } }
+  .grid-2 { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
 
   /* --------------------------------------------------------------- Kennzahlen */
-  .kpis { display: grid; gap: 16px; grid-template-columns: minmax(260px, 1.3fr) minmax(0, 3fr); }
-  @media (max-width: 900px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+  .kpis { display: grid; gap: 16px; grid-template-columns: minmax(min(100%, 380px), 1.3fr) minmax(0, 3fr); }
+  @media (max-width: 1100px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
   .hero .label, .tile .label { color: var(--ink-2); font-size: 13px; }
-  .hero .value { font-size: 48px; font-weight: 600; line-height: 1.1; margin: 6px 0 8px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
-  .tiles { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .tile .value { font-size: clamp(18px, 2vw, 24px); font-weight: 600; margin: 4px 0 2px; white-space: nowrap; }
-  .hero .facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 14px; font-size: 13px; }
+  .hero .value { font-size: 48px; font-weight: 600; line-height: 1.1; margin: 6px 0 8px; letter-spacing: -0.02em; white-space: nowrap; }
+  .hero .facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 0; font-size: 13px; }
   .hero .facts dt { color: var(--ink-2); }
   .hero .facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .tiles { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 700px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+  .tile .value { font-size: 24px; font-weight: 600; margin: 4px 0 2px; white-space: nowrap; }
   .delta-up { color: var(--text-up); }
   .delta-down { color: var(--text-down); }
   .meter { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 8px 0 6px; }
   .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }
   .meter > span[data-sev="warning"] { background: var(--warning); }
   .meter > span[data-sev="critical"] { background: var(--critical); }
+
+  /* --------------------------------------------------------------- Zeitraum */
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .filters .lbl { color: var(--ink-2); font-size: 13px; margin-right: 4px; }
+  .filters .btn { min-height: 30px; padding: 4px 12px; font-size: 13px; }
 
   /* --------------------------------------------------------------- Diagramm */
   .chart { margin: 0; position: relative; }
@@ -199,18 +213,19 @@
   tr:last-child td { border-bottom: 0; }
 
   /* --------------------------------------------------------------- Strategien */
-  .symbols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .symbols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
   .consensus { margin: 6px 0 14px; }
   .div-track { position: relative; height: 10px; border-radius: 5px; background: var(--midpoint); }
   .div-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
   .div-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--axis); }
   .div-thr { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--muted); }
-  .div-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .div-scale { display: grid; grid-template-columns: 1fr auto 1fr; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .div-scale span:last-child { text-align: right; }
   .wrow { display: grid; grid-template-columns: 112px minmax(60px, 1fr) 44px 86px; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; }
   .wbar { height: 8px; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; }
   .wbar.cash { background: var(--axis); }
   .wtrack { height: 8px; }
-  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; margin-top: 10px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; margin: 10px 0 0; }
   .kv dt { color: var(--ink-2); }
   .kv dd { margin: 0; }
   details > summary { cursor: pointer; color: var(--ink-2); margin-top: 10px; font-size: 13px; }
@@ -227,21 +242,21 @@
   .list li { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
   .list li:last-child { border-bottom: 0; }
   .list .when { flex: none; color: var(--ink-2); white-space: nowrap; min-width: 92px; font-variant-numeric: tabular-nums; }
+  #calendar .when { min-width: 9.5em; }
+  .cur { flex: none; font-weight: 600; min-width: 2.8em; }
   .list li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-  .cur { font-weight: 600; min-width: 34px; }
 
   footer { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; color: var(--ink-2); font-size: 12.5px; }
   footer .spacer { flex: 1; }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--surface);
-    padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 10; max-width: calc(100vw - 32px);
+    padding: 10px 16px; border-radius: 10px; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    z-index: 10; max-width: calc(100vw - 32px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
   .stale { opacity: 0.55; transition: opacity 0.2s; }
   @media (max-width: 600px) {
     .viz-root { padding: 14px 16px 32px; }
-    .hero .value { font-size: 40px; }
     .botbox { margin-left: 0; width: 100%; }
-    .tiles { gap: 10px; }
     .tile .value { font-size: 18px; }
     .card { padding: 14px; }
     .wrow { grid-template-columns: 104px minmax(30px, 1fr) 36px 72px; font-size: 12.5px; gap: 6px; }
@@ -249,9 +264,9 @@
 </style>
 </head>
 <body>
-<div class="viz-root">
-<div class="wrap" id="app">
-  <header class="top">
+<div class="viz-root" id="root">
+<div class="wrap">
+  <header class="top" id="top">
     <div class="brand">
       <h1>TradingAI</h1>
       <span class="badge" id="modeBadge"><span class="sw" aria-hidden="true"></span><span class="t">…</span></span>
@@ -266,30 +281,56 @@
       </div>
       <button class="btn primary" id="btnStart" type="button" disabled>Bot starten</button>
       <button class="btn" id="btnStop" type="button" disabled>Bot stoppen</button>
+      <button class="btn danger" id="btnKill" type="button" hidden>Zwangsweise beenden</button>
+      <button class="btn ghost" id="btnSettings" type="button" aria-expanded="false" aria-controls="settings">Einstellungen</button>
     </div>
   </header>
+
+  <section class="card" id="settings" hidden aria-label="Einstellungen">
+    <div class="card-head"><h2>Einstellungen</h2></div>
+    <label class="setting">
+      <input type="checkbox" id="optAutoBot">
+      <span>Bot automatisch starten, wenn das Dashboard startet<br><span class="hint">Praktisch zusammen mit der nächsten Option.</span></span>
+    </label>
+    <label class="setting">
+      <input type="checkbox" id="optAutoWin">
+      <span>Dashboard beim Windows-Start im Hintergrund starten (ohne Browserfenster)<br><span class="hint" id="optAutoWinHint">Mit beiden Haken läuft der Bot nach jedem Neustart von selbst weiter. MetaTrader 5 wird beim Verbinden in der Regel automatisch mitgestartet.</span></span>
+    </label>
+    <div class="setting">
+      <button class="btn" id="btnConfig" type="button">config.yaml bearbeiten</button>
+      <span class="hint">Öffnet die Konfiguration im Editor (Symbole, Modus paper/live, Risiko). Nach dem Speichern den Bot neu starten.</span>
+    </div>
+    <dl class="kv" id="cfgInfo"></dl>
+  </section>
 
   <div id="alerts" aria-live="polite"></div>
 
   <main id="content">
-    <section class="kpis" aria-label="Kennzahlen">
+    <section class="kpis" id="kpis" aria-label="Kennzahlen">
       <div class="card hero">
         <div class="label">Equity (Kontostand inkl. offener Positionen)</div>
-        <div class="value" id="heroValue">–</div>
+        <div class="value fit" id="heroValue">–</div>
         <div class="muted small" id="heroSub"></div>
         <dl class="facts" id="heroFacts"></dl>
       </div>
       <div class="tiles">
-        <div class="card tile"><div class="label">Kontostand</div><div class="value" id="tBalance">–</div><div class="muted small" id="tBalanceSub"></div></div>
-        <div class="card tile"><div class="label">Heute</div><div class="value" id="tToday">–</div><div class="muted small" id="tTodaySub"></div></div>
-        <div class="card tile"><div class="label">Offene Positionen</div><div class="value" id="tOpen">–</div><div class="muted small" id="tOpenSub"></div></div>
-        <div class="card tile"><div class="label">Rückgang vom Höchststand</div><div class="value" id="tDD">–</div><div class="meter" role="meter" id="tDDMeter" aria-label="Rückgang im Verhältnis zum Not-Aus-Limit"><span></span></div><div class="muted small" id="tDDSub"></div></div>
-        <div class="card tile"><div class="label">Trefferquote</div><div class="value" id="tWin">–</div><div class="muted small" id="tWinSub"></div></div>
-        <div class="card tile"><div class="label">Ergebnis aller Trades</div><div class="value" id="tTotal">–</div><div class="muted small" id="tTotalSub"></div></div>
+        <div class="card tile"><div class="label">Kontostand</div><div class="value fit" id="tBalance">–</div><div class="muted small" id="tBalanceSub"></div></div>
+        <div class="card tile"><div class="label" id="tTodayLabel">Heute</div><div class="value fit" id="tToday">–</div><div class="muted small" id="tTodaySub"></div></div>
+        <div class="card tile"><div class="label">Offene Positionen</div><div class="value fit" id="tOpen">–</div><div class="muted small" id="tOpenSub"></div></div>
+        <div class="card tile"><div class="label">Rückgang vom Höchststand</div><div class="value fit" id="tDD">–</div><div class="meter" role="meter" id="tDDMeter" aria-label="Rückgang im Verhältnis zum Not-Aus-Limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div><div class="muted small" id="tDDSub"></div></div>
+        <div class="card tile"><div class="label">Trefferquote</div><div class="value fit" id="tWin">–</div><div class="muted small" id="tWinSub"></div></div>
+        <div class="card tile"><div class="label">Ergebnis aller Trades</div><div class="value fit" id="tTotal">–</div><div class="muted small" id="tTotalSub"></div></div>
       </div>
     </section>
 
     <section class="section">
+      <div class="filters" role="group" aria-label="Zeitraum des Kapitalverlaufs">
+        <span class="lbl">Zeitraum</span>
+        <button class="btn" type="button" data-range="24h">24 Std.</button>
+        <button class="btn" type="button" data-range="7d">7 Tage</button>
+        <button class="btn" type="button" data-range="30d">30 Tage</button>
+        <button class="btn" type="button" data-range="all">Alles</button>
+      </div>
       <figure class="card chart" id="equityCard">
         <figcaption class="card-head">
           <h2>Kapitalverlauf (Equity)</h2>
@@ -300,7 +341,7 @@
       </figure>
     </section>
 
-    <section class="card section">
+    <section class="card section" id="positionsCard">
       <div class="card-head"><h2>Offene Positionen</h2><span class="muted small" id="posSum"></span></div>
       <div class="table-wrap" id="positions"></div>
     </section>
@@ -315,7 +356,7 @@
       <div class="symbols" id="symbols"></div>
     </section>
 
-    <section class="grid-2 even section">
+    <section class="grid-2 section">
       <div class="card">
         <div class="card-head"><h2>Wichtige Termine (48 Std.)</h2></div>
         <div id="calendar"></div>
@@ -350,11 +391,24 @@ const TOKEN = "__TOKEN__";
 const POLL_MS = 5000;
 const STRAT = { trend: "Trendfolge", mean_reversion: "Gegenbewegung", breakout: "Ausbruch", ml: "KI-Modell", cash: "Abwarten" };
 const STRAT_ORDER = ["trend", "mean_reversion", "breakout", "ml", "cash"];
-const STATUS_ICON = { running: "✓", starting: "…", stopped: "■", never: "■", unresponsive: "!", crashed: "!", failed: "✕", killed: "✕" };
+// Zustand -> [Statusart, Symbol]
+const STATES = {
+  running: ["good", "✓"], waiting: ["warning", "…"], stalled: ["warning", "!"], starting: ["warning", "…"],
+  unresponsive: ["warning", "!"], crashed: ["serious", "!"], stopped_error: ["serious", "!"], failed: ["critical", "✕"],
+  killed: ["critical", "✕"], stopped: ["neutral", "■"], never: ["neutral", "■"],
+};
+const UP_STATES = ["running", "waiting", "stalled", "unresponsive", "starting", "killed"];
+const FAVICON = { good: "#0ca30c", warning: "#fab219", serious: "#ec835a", critical: "#d03b3b", neutral: "#898781" };
 
 let last = null;          // letzte erfolgreiche Antwort
+let lastOk = null;        // Zeitpunkt der letzten erfolgreichen Antwort
+let offline = false;
 let busy = false;         // Aktion läuft
 let showEqTable = false;
+let range = "7d";
+const sigs = {};          // Signaturen: Bereiche nur neu zeichnen, wenn sich etwas geändert hat
+const openDetails = new Set();
+try { const r = localStorage.getItem("tai-range"); if (["24h", "7d", "30d", "all"].includes(r)) range = r; } catch (e) { /* egal */ }
 
 // ------------------------------------------------------------------ Hilfen
 const $ = (id) => document.getElementById(id);
@@ -378,6 +432,13 @@ function svgEl(tag, attrs) {
   return node;
 }
 function isNum(v) { return typeof v === "number" && Number.isFinite(v); }
+function changed(key, value) {
+  const s = JSON.stringify(value);
+  if (sigs[key] === s) return false;
+  sigs[key] = s;
+  return true;
+}
+const minuteBucket = () => Math.floor(Date.now() / 60000);
 
 let currency = "EUR";
 function money(v, opts = {}) {
@@ -390,9 +451,9 @@ function money(v, opts = {}) {
   }
   return opts.signed && v > 0 ? "+" + s : s;
 }
-function compactMoney(v) {
-  if (!isNum(v)) return "–";
-  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 }).format(v);
+function axisMoney(v, step) {
+  const digits = step >= 1 ? 0 : Math.min(2, Math.ceil(-Math.log10(step)));
+  return new Intl.NumberFormat("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
 }
 function pct(v, digits = 1, signed = false) {
   if (!isNum(v)) return "–";
@@ -410,6 +471,7 @@ function signedNum(v, digits = 2) {
 }
 function parseTime(t) {
   if (!t) return null;
+  if (t instanceof Date) return t;
   const s = String(t).trim();
   // Zeiten mit Z/Offset sind UTC -> lokale Zeit; ohne Zone (Serverzeit) unverändert anzeigen
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(" ", "T");
@@ -430,7 +492,7 @@ function ago(t) {
   const d = parseTime(t);
   if (!d) return "";
   const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
-  if (s < 60) return `vor ${Math.round(s)} s`;
+  if (s < 60) return "vor weniger als 1 min";
   if (s < 3600) return `vor ${Math.round(s / 60)} min`;
   if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
   return `vor ${Math.round(s / 86400)} Tagen`;
@@ -438,80 +500,131 @@ function ago(t) {
 function deltaClass(v) { return !isNum(v) || v === 0 ? "" : v > 0 ? "delta-up" : "delta-down"; }
 function setText(id, text, cls) {
   const node = $(id);
-  node.textContent = text;
-  if (cls !== undefined) node.className = node.className.replace(/\bdelta-(up|down)\b/g, "").trim() + (cls ? " " + cls : "");
+  if (node.textContent !== text) node.textContent = text;
+  if (cls !== undefined) {
+    node.classList.remove("delta-up", "delta-down");
+    if (cls) node.classList.add(cls);
+  }
 }
 function dirLabel(d) { return d > 0 ? "▲ Kauf" : d < 0 ? "▼ Verkauf" : "– neutral"; }
 function toast(msg) {
   const t = el("div", { class: "toast", role: "status" }, msg);
-  document.body.append(t);
-  setTimeout(() => t.remove(), 4500);
+  $("root").append(t);
+  setTimeout(() => t.remove(), 5000);
+}
+function fitValues() {
+  // Große Zahlen nie umbrechen – notfalls die Schrift verkleinern
+  for (const n of document.querySelectorAll(".fit")) {
+    n.style.fontSize = "";
+    if (n.clientWidth && n.scrollWidth > n.clientWidth) {
+      n.style.fontSize = (parseFloat(getComputedStyle(n).fontSize) * n.clientWidth / n.scrollWidth * 0.98).toFixed(1) + "px";
+    }
+  }
 }
 
 // ------------------------------------------------------------------ Daten
 async function refresh() {
   try {
-    const res = await fetch("/api/status", { cache: "no-store" });
+    const res = await fetch("/api/status?range=" + encodeURIComponent(range), { cache: "no-store" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     last = await res.json();
-    document.getElementById("content").classList.remove("stale");
-    render(last, null);
+    offline = false;
+    lastOk = new Date();
+    $("footStatus").textContent = "Aktualisiert " + lastOk.toLocaleTimeString("de-DE") + " · alle 5 Sekunden";
   } catch (err) {
-    document.getElementById("content").classList.add("stale");
-    render(last, "Keine Verbindung zum Dashboard-Programm. Läuft es noch? (dashboard_starten.bat)");
+    offline = true;
+    $("footStatus").textContent = "Keine Verbindung – letzter Stand " + (lastOk ? lastOk.toLocaleTimeString("de-DE") : "–");
   }
+  $("content").classList.toggle("stale", offline);
+  $("top").classList.toggle("stale", offline);
+  render(last);
 }
 
-async function action(path, confirmText) {
-  if (busy) return;
+async function action(path, confirmText, body) {
+  if (busy || offline) {
+    if (offline) toast("Keine Verbindung zum Dashboard-Programm – Aktion wurde nicht ausgeführt.");
+    return;
+  }
   if (confirmText && !window.confirm(confirmText)) return;
   busy = true;
   updateButtons(last);
   try {
-    const res = await fetch(path, { method: "POST", headers: { "X-TradingAI-Token": TOKEN, "Content-Type": "application/json" }, body: "{}" });
+    const res = await fetch(path, { method: "POST", headers: { "X-TradingAI-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
     const data = await res.json().catch(() => ({}));
     toast(data.message || (res.ok ? "OK" : "Fehler " + res.status));
   } catch (err) {
-    toast("Aktion fehlgeschlagen: " + err.message);
+    toast("Keine Verbindung zum Dashboard-Programm – Aktion wurde nicht ausgeführt.");
   } finally {
     busy = false;
     setTimeout(refresh, 600);
   }
 }
 
-// ------------------------------------------------------------------ Darstellung
+// ------------------------------------------------------------------ Zustand
 function effectiveState(d) {
   const st = d && d.bot ? d.bot.state : "never";
   const killed = d && d.snapshot && d.snapshot.risk && d.snapshot.risk.killed;
   return st === "running" && killed ? "killed" : st;
 }
+function isUp(d) { return UP_STATES.includes(effectiveState(d)); }
+function snapshotStale(d) {
+  const snap = d.snapshot || {};
+  if (!snap.account) return false;
+  if (!isUp(d) || effectiveState(d) === "waiting") return true;
+  const upd = parseTime(snap.updated_at);
+  const loop = ((d.config || {}).loop_seconds || 30) * 1000;
+  return !upd || Date.now() - upd.getTime() > Math.max(3 * loop, 120000);
+}
+function marketsClosed(symbols) {
+  // Devisen, Metalle und Indizes ruhen etwa von Freitag 21 Uhr bis Sonntag 21 Uhr (UTC)
+  if (!symbols.length || symbols.some((s) => /BTC|ETH|CRYPTO|LTC|XRP/i.test(s))) return false;
+  const now = new Date(), day = now.getUTCDay(), h = now.getUTCHours() + now.getUTCMinutes() / 60;
+  return (day === 5 && h >= 21.5) || day === 6 || (day === 0 && h < 21);
+}
 
-function render(d, connError) {
-  renderAlerts(d, connError);
+// ------------------------------------------------------------------ Darstellung
+function render(d) {
+  renderAlerts(d);
   if (!d) return;
   const snap = d.snapshot || {};
   const acc = snap.account || {};
   if (acc.currency) currency = acc.currency;
   renderHeader(d, snap, acc);
+  renderSettings(d);
   renderKpis(d, snap, acc);
-  renderEquity(d.equity || []);
-  renderPositions(snap.positions || []);
-  renderTrades((d.trades || {}).recent || []);
-  renderSymbols(d, snap);
-  renderCalendar(snap.calendar || [], snap.updated_at);
-  renderNews(snap, d.config || {});
-  renderLog(d.log || []);
-  $("footStatus").textContent = "Aktualisiert " + new Date().toLocaleTimeString("de-DE") + " · alle 5 Sekunden";
+  if (changed("eq", [d.equity, showEqTable, currency])) renderEquity(d);
+  if (changed("pos", [snap.positions, currency])) renderPositions(snap.positions || []);
+  $("positionsCard").classList.toggle("stale", snapshotStale(d));
+  if (changed("trades", [(d.trades || {}).recent, currency])) renderTrades((d.trades || {}).recent || []);
+  if (changed("sym", [d.learning, snap.news, snap.learning, (d.config || {}).symbols])) renderSymbols(d, snap);
+  if (changed("cal", [snap.calendar, !!snap.updated_at])) renderCalendar(snap.calendar || [], snap.updated_at);
+  if (changed("news", [snap.news, snap.headlines, minuteBucket()])) renderNews(snap);
+  if (changed("log", d.log)) renderLog(d.log || []);
   $("footVersion").textContent = "Version " + (d.version || "?");
+  updateTitle(d, acc);
+  fitValues();
+}
+
+function updateTitle(d, acc) {
+  const st = effectiveState(d);
+  const kind = (STATES[st] || STATES.never)[0];
+  const lab = st === "killed" ? "Not-Aus" : (d.bot && d.bot.label) || "";
+  document.title = (kind === "good" ? "● " + money(acc.equity) : kind === "neutral" ? "■ " + lab : "⚠ " + lab) + " – TradingAI";
+  if (offline) document.title = "⚠ Keine Verbindung – TradingAI";
+  const color = FAVICON[offline ? "warning" : kind] || FAVICON.neutral;
+  const href = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="${color}"/></svg>`);
+  if ($("favicon").getAttribute("href") !== href) $("favicon").setAttribute("href", href);
 }
 
 function renderHeader(d, snap, acc) {
-  const mode = (snap.mode || (d.config || {}).mode || "").toLowerCase();
+  const cfg = d.config || {};
+  const mode = (snap.mode || cfg.mode || "").toLowerCase();
   const badge = $("modeBadge");
   let text = "Paper (Simulation)", sw = "var(--muted)";
   if (mode === "live") {
     if (acc.is_demo === false) { text = "LIVE · ECHTGELD"; sw = "var(--critical)"; }
-    else { text = "LIVE · Demokonto"; sw = "var(--good)"; }
+    else if (acc.is_demo === true || !cfg.allow_real_account) { text = "LIVE · Demokonto"; sw = "var(--good)"; }
+    else { text = "LIVE · Kontotyp noch unbekannt"; sw = "var(--warning)"; }
   }
   badge.querySelector(".t").textContent = text;
   badge.querySelector(".sw").style.background = sw;
@@ -519,171 +632,228 @@ function renderHeader(d, snap, acc) {
   const parts = [];
   if (acc.login) parts.push("Konto " + acc.login);
   if (acc.server) parts.push(acc.server);
-  const cfg = d.config || {};
-  if (cfg.symbols && cfg.symbols.length) parts.push(cfg.symbols.join(", ") + " · " + (cfg.timeframe || ""));
-  $("accountLine").textContent = parts.join(" · ");
+  const syms = snap.symbols || cfg.symbols || [];
+  if (syms.length) parts.push(syms.join(", ") + " · " + (snap.timeframe || cfg.timeframe || ""));
+  setText("accountLine", parts.join(" · "));
 
   const st = effectiveState(d);
+  const [kind, icon] = STATES[st] || STATES.never;
   const box = $("botStatus");
-  box.dataset.s = st;
-  box.querySelector(".icon").textContent = STATUS_ICON[st] || "■";
+  box.dataset.k = kind;
+  box.querySelector(".icon").textContent = icon;
   box.querySelector(".label").textContent = st === "killed" ? "Not-Aus aktiv" : "Bot: " + ((d.bot && d.bot.label) || "unbekannt");
   const bot = d.bot || {};
   const det = [];
-  if (st === "running" || st === "killed") {
-    if (bot.phase) det.push(bot.phase);
+  if (["running", "killed", "waiting", "stalled"].includes(st)) {
+    if (bot.phase && st !== "waiting") det.push(bot.phase);
     if (bot.started_at) det.push("läuft seit " + fmtTime(bot.started_at));
   } else if (st === "starting") {
-    det.push("Programmteile werden geladen – das dauert beim ersten Mal bis zu einer Minute");
-  } else if (st === "stopped" || st === "crashed" || st === "unresponsive") {
+    det.push("Programmteile werden geladen – beim ersten Mal bis zu einer Minute");
+  } else if (["stopped", "stopped_error", "crashed", "unresponsive"].includes(st)) {
+    if (st === "stopped_error" && bot.phase) det.push(bot.phase);
     if (bot.last_seen) det.push("zuletzt aktiv " + ago(bot.last_seen));
   }
   if (bot.stop_pending) det.push("Stopp angefordert …");
-  $("botDetail").textContent = det.join(" · ");
+  setText("botDetail", det.join(" · "));
+  $("btnKill").hidden = !d.can_kill;
   updateButtons(d);
 }
 
 function updateButtons(d) {
-  const st = d ? effectiveState(d) : "unknown";
-  const running = ["running", "killed", "unresponsive", "starting"].includes(st);
-  $("btnStart").disabled = busy || !d || running;
-  $("btnStop").disabled = busy || !d || !running || !!(d.bot && d.bot.stop_pending);
+  const up = d ? isUp(d) : false;
+  $("btnStart").disabled = busy || offline || !d || up;
+  $("btnStop").disabled = busy || offline || !d || !up || !!(d.bot && d.bot.stop_pending);
+  $("btnKill").disabled = busy || offline;
+  $("btnQuit").disabled = offline;
+  $("btnConfig").disabled = busy || offline;
 }
 
-function banner(kind, icon, text, extra) {
-  return el("div", { class: "banner", "data-k": kind, role: kind === "critical" ? "alert" : null },
-    el("span", { class: "bi", "aria-hidden": "true" }, icon), el("div", { class: "bt" }, text, extra || null));
+function renderSettings(d) {
+  const p = d.prefs || {};
+  const a = $("optAutoBot"), w = $("optAutoWin");
+  if (document.activeElement !== a) a.checked = !!p.autostart_bot;
+  if (document.activeElement !== w) w.checked = !!p.autostart_windows;
+  w.disabled = !p.windows || busy || offline;
+  a.disabled = busy || offline;
+  if (!p.windows) $("optAutoWinHint").textContent = "Nur unter Windows verfügbar.";
+  const cfg = d.config || {};
+  if (changed("cfgInfo", cfg)) {
+    const rows = [
+      ["Modus", cfg.mode === "live" ? "live (MetaTrader 5)" : "paper (Simulation)"],
+      ["Symbole", (cfg.symbols || []).join(", ") + " · " + (cfg.timeframe || "")],
+      ["Risiko je Trade", pct(cfg.risk_per_trade, 1)],
+      ["Tageslimit / Not-Aus", pct(cfg.max_daily_loss, 0) + " / " + pct(cfg.max_drawdown, 0)],
+      ["Datenordner", cfg.state_dir || ""],
+    ];
+    $("cfgInfo").replaceChildren(...rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+  }
 }
 
-function renderAlerts(d, connError) {
-  const box = $("alerts");
-  const items = [];
-  if (connError) items.push(banner("warning", "!", connError));
+function renderAlerts(d) {
+  const specs = [];   // [Art, Symbol, Text, Details, Knopf]
+  if (offline) specs.push(["warning", "!", "Keine Verbindung zum Dashboard-Programm. Läuft es noch? (Desktop-Verknüpfung „TradingAI Dashboard“ oder dashboard_starten.bat)", null, null]);
   if (d) {
     const snap = d.snapshot || {};
     const risk = snap.risk || {};
+    const cfg = d.config || {};
     const st = effectiveState(d);
     const bot = d.bot || {};
-    if (!(d.config || {}).found) items.push(banner("warning", "!", "config.yaml wurde nicht gefunden – bitte zuerst install.bat ausführen."));
-    if (risk.killed) {
-      const stopped = !["running", "killed", "unresponsive", "starting"].includes(st);
-      const btn = el("button", { class: "btn", type: "button" }, "Not-Aus zurücksetzen");
-      btn.disabled = !stopped || busy;
-      btn.title = stopped ? "" : "Erst den Bot stoppen";
-      btn.addEventListener("click", () => action("/api/killswitch/reset", "Not-Aus wirklich zurücksetzen? Prüfe vorher, warum er ausgelöst wurde."));
-      items.push(el("div", { class: "banner", "data-k": "critical", role: "alert" },
-        el("span", { class: "bi", "aria-hidden": "true" }, "✕"),
-        el("div", { class: "bt" }, "Not-Aus aktiv: " + (risk.kill_reason || "") + ". Der Bot eröffnet keine neuen Trades." + (stopped ? "" : " Zum Zurücksetzen erst den Bot stoppen.")),
-        btn));
-    }
-    if (st === "failed") {
-      const details = (bot.details || []).join("\n");
-      items.push(banner("critical", "✕", "Der Bot konnte nicht starten (Code " + bot.exit_code + ").", details ? el("pre", {}, details) : null));
-    } else if (st === "crashed") {
-      items.push(banner("serious", "!", "Der Bot wurde unerwartet beendet (" + ago(bot.last_seen) + "). Details im Protokoll unten. Offene Positionen behalten ihren Stop-Loss."));
-    } else if (st === "unresponsive") {
-      items.push(banner("warning", "!", "Der Bot meldet sich seit " + Math.round(bot.age_seconds || 0) + " Sekunden nicht. Er arbeitet evtl. noch (z. B. Lernen) – sonst stoppen und neu starten."));
-    }
-    const acc = snap.account || {};
-    if (snap.mode === "live" && acc.is_demo === false) items.push(banner("serious", "€", "Achtung: Der Bot handelt auf einem ECHTGELD-Konto."));
+    const up = isUp(d);
+    if (cfg.error) specs.push(["critical", "✕", "config.yaml enthält einen Fehler: " + cfg.error + " – Tipp: Windows-Pfade und Passwörter in einfache Anführungszeichen setzen.", null, "config"]);
+    else if (!cfg.found) specs.push(["warning", "!", "config.yaml wurde nicht gefunden – bitte zuerst install.bat ausführen.", null, null]);
+    if (cfg.changed_since_start) specs.push(["info", "i", "config.yaml wurde geändert. Damit die Änderungen gelten, den Bot stoppen und neu starten.", null, null]);
+    if (risk.killed) specs.push(["critical", "✕", "Not-Aus aktiv: " + (risk.kill_reason || "") + ". Der Bot eröffnet keine neuen Trades." + (up ? " Zum Zurücksetzen erst den Bot stoppen." : ""), null, up ? null : "reset"]);
+    if (st === "failed") specs.push(["critical", "✕", "Der Bot konnte nicht starten (Code " + bot.exit_code + "). Meldung:", (bot.details || []).join("\n"), null]);
+    else if (st === "crashed") specs.push(["serious", "!", "Der Bot wurde unerwartet beendet (" + ago(bot.last_seen) + ", z. B. durch Neustart des PCs). Offene Positionen behalten ihren Stop-Loss. Einfach wieder starten.", [...(bot.details || []), ...(d.last_errors || [])].join("\n"), null]);
+    else if (st === "stopped_error") specs.push(["serious", "!", "Der Bot hat sich mit einem Fehler beendet: " + (bot.phase || "") + ".", (d.last_errors || []).join("\n"), null]);
+    else if (st === "unresponsive") specs.push(["warning", "!", "Der Bot meldet sich seit " + ago(bot.last_seen).replace("vor ", "") + " nicht mehr." + (d.can_kill ? " Wenn das so bleibt: „Zwangsweise beenden“ und neu starten." : " Wenn das so bleibt: PC neu starten oder den Bot im Task-Manager beenden."), null, null]);
+    else if (st === "stalled") specs.push(["warning", "!", "Der Bot hängt seit längerer Zeit im Schritt „" + (bot.phase || "") + "“." + (d.can_kill ? " Wenn das so bleibt: „Zwangsweise beenden“ und neu starten." : ""), (d.last_errors || []).join("\n"), null]);
+    else if (st === "waiting") specs.push(["warning", "…", "MetaTrader 5 ist nicht erreichbar – MT5 starten und mit dem Demokonto einloggen. Der Bot verbindet sich dann von selbst." + (bot.last_error ? " (Meldung: " + bot.last_error + ")" : ""), null, null]);
     const term = snap.terminal || {};
-    const botUp = ["running", "killed", "unresponsive"].includes(st);
-    if (botUp && term.connected === false) items.push(banner("warning", "!", "MetaTrader 5 hat keine Verbindung zum Broker-Server."));
-    if (botUp && term.trade_allowed === false) items.push(banner("critical", "✕", "In MetaTrader 5 ist „Algo Trading“ ausgeschaltet – der Bot kann keine Orders senden. Den Knopf oben in MT5 auf grün schalten."));
-    if (botUp && term.tradeapi_disabled === true) items.push(banner("critical", "✕", "In MetaTrader 5 ist der Handel über Python gesperrt: Extras → Optionen → Expert Advisors → Haken bei „… über externe Python-API deaktivieren“ entfernen."));
+    const live = ["running", "killed"].includes(st);
+    if (live && term.connected === false) specs.push(["warning", "!", "MetaTrader 5 hat keine Verbindung zum Broker-Server.", null, null]);
+    if (live && term.trade_allowed === false) specs.push(["critical", "✕", "In MetaTrader 5 ist „Algo Trading“ ausgeschaltet – der Bot kann keine Orders senden. Den Knopf oben in MT5 auf grün schalten.", null, null]);
+    if (live && term.tradeapi_disabled === true) specs.push(["critical", "✕", "In MetaTrader 5 ist der Handel über Python gesperrt: Extras → Optionen → Expert Advisors → Haken bei „… über externe Python-API deaktivieren“ entfernen.", null, null]);
+    const acc = snap.account || {};
+    if (snap.mode === "live" && acc.is_demo === false) specs.push(["serious", "€", "Achtung: Der Bot handelt auf einem ECHTGELD-Konto.", null, null]);
+    if ((snap.mode || cfg.mode) === "paper") specs.push(["info", "i", "Simulation mit Spielgeld (" + money(cfg.paper_balance) + ") – dein MT5-Demokonto wird nicht benutzt. Für das Demokonto in config.yaml „mode: live“ eintragen und den Bot neu starten.", null, "config"]);
     const lim = (risk.limits || {}).max_daily_loss;
-    if (isNum(risk.daily_loss_pct) && isNum(lim) && risk.daily_loss_pct >= lim) items.push(banner("warning", "!", "Tagesverlust-Limit erreicht – bis morgen keine neuen Trades."));
+    if (up && isNum(risk.daily_loss_pct) && isNum(lim) && risk.daily_loss_pct >= lim) specs.push(["warning", "!", "Tagesverlust-Limit erreicht – bis morgen keine neuen Trades.", null, null]);
+    const notice = snap.account_notice;
+    if (notice && parseTime(notice.time) && Date.now() - parseTime(notice.time).getTime() < 48 * 3600e3) specs.push(["info", "i", "Neues Konto erkannt (" + notice.from + " → " + notice.to + "): Statistik, Höchststand und Kapitalverlauf beginnen neu. Die alten Daten liegen im Ordner „archiv“.", null, null]);
+    if (up && marketsClosed(snap.symbols || cfg.symbols || [])) specs.push(["info", "i", "Wochenende: Die Märkte sind geschlossen. Es entstehen keine neuen Kerzen und keine Trades – der Bot wartet bis zur Öffnung am Sonntagabend (ca. 23 Uhr deutscher Zeit).", null, null]);
   }
-  box.replaceChildren(...items);
+  if (!changed("alerts", [specs, busy])) return;
+  const box = $("alerts");
+  box.replaceChildren(...specs.map(([kind, icon, text, details, btn]) => {
+    const extra = [];
+    if (btn === "reset") {
+      const b = el("button", { class: "btn", type: "button" }, "Not-Aus zurücksetzen");
+      b.disabled = busy;
+      b.addEventListener("click", () => action("/api/killswitch/reset", "Not-Aus wirklich zurücksetzen? Prüfe vorher, warum er ausgelöst wurde."));
+      extra.push(b);
+    } else if (btn === "config") {
+      const b = el("button", { class: "btn", type: "button" }, "config.yaml bearbeiten");
+      b.disabled = busy;
+      b.addEventListener("click", () => action("/api/config/open"));
+      extra.push(b);
+    }
+    return el("div", { class: "banner", "data-k": kind, role: kind === "critical" ? "alert" : null },
+      el("span", { class: "bi", "aria-hidden": "true" }, icon),
+      el("div", { class: "bt" }, text, details ? el("pre", {}, details) : null), extra);
+  }));
 }
 
 function renderKpis(d, snap, acc) {
   const risk = snap.risk || {};
   const lim = risk.limits || {};
   const stats = (d.trades || {}).stats || {};
-  $("heroValue").textContent = money(acc.equity);
-  const sub = [];
-  if (isNum(acc.free_margin)) sub.push("Freie Margin " + money(acc.free_margin));
-  if (snap.updated_at) sub.push("Stand " + ago(snap.updated_at));
-  $("heroSub").textContent = sub.length ? sub.join(" · ") : "Noch keine Daten – starte den Bot.";
+  const stale = snapshotStale(d);
+  $("kpis").classList.toggle("stale", stale);
+  setText("heroValue", money(acc.equity));
+  let sub;
+  if (!snap.account) sub = isUp(d) ? "Der Bot läuft – die ersten Kontodaten erscheinen nach dem ersten Durchlauf." : "Noch keine Daten – starte den Bot.";
+  else if (stale) sub = "Letzter Stand " + fmtTime(snap.updated_at, true) + (isUp(d) ? " – keine neuen Daten vom Bot" : " – der Bot läuft nicht, Werte sind nicht aktuell");
+  else sub = (isNum(acc.free_margin) ? "Freie Margin " + money(acc.free_margin) + " · " : "") + "Stand " + ago(snap.updated_at);
+  setText("heroSub", sub);
   const facts = [];
-  const eq = (d.equity || []).filter((p) => isNum(p.equity));
-  if (eq.length && isNum(acc.equity)) {
+  const eqInfo = d.equity || {};
+  const eq = eqInfo.points || [];
+  if (eq.length && isNum(acc.equity) && isNum(eq[0].equity)) {
     const first = eq[0].equity;
     const change = acc.equity - first;
-    facts.push(["Seit " + fmtTime(eq[0].t), el("span", { class: deltaClass(change) }, money(change, { signed: true }) + (first ? " (" + pct(change / first, 1, true) + ")" : ""))]);
+    facts.push(["Seit " + fmtTime(eq[0].t), money(change, { signed: true }) + (first ? " (" + pct(change / first, 1, true) + ")" : ""), deltaClass(change)]);
   }
   if (isNum(risk.peak_equity)) facts.push(["Höchststand", money(risk.peak_equity)]);
   if (isNum(lim.risk_per_trade) && isNum(acc.equity)) facts.push(["Risiko je Trade", pct(lim.risk_per_trade, 1) + " ≈ " + money(acc.equity * lim.risk_per_trade)]);
   if (isNum(acc.leverage) && acc.leverage) facts.push(["Hebel", "1:" + acc.leverage]);
-  $("heroFacts").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+  if (changed("facts", facts)) $("heroFacts").replaceChildren(...facts.flatMap(([k, v, c]) => [el("dt", {}, k), el("dd", { class: c || null }, v)]));
 
-  $("tBalance").textContent = money(acc.balance);
-  $("tBalanceSub").textContent = isNum(acc.equity) && isNum(acc.balance) ? "offen: " + money(acc.equity - acc.balance, { signed: true }) : "";
+  setText("tBalance", money(acc.balance));
+  setText("tBalanceSub", isNum(acc.equity) && isNum(acc.balance) ? "offen: " + money(acc.equity - acc.balance, { signed: true }) : "");
 
+  const upd = parseTime(snap.updated_at);
+  const today = !upd || upd.toDateString() === new Date().toDateString();
+  setText("tTodayLabel", today ? "Heute" : "Tag " + upd.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }));
   setText("tToday", money(risk.daily_pl, { signed: true }), deltaClass(risk.daily_pl));
   const dayPct = isNum(risk.daily_pl) && risk.day_start_equity ? risk.daily_pl / risk.day_start_equity : null;
-  $("tTodaySub").textContent = (isNum(dayPct) ? pct(dayPct, 2, true) + " · " : "") + (isNum(lim.max_daily_loss) ? "Tageslimit −" + pct(lim.max_daily_loss, 0) : "");
+  setText("tTodaySub", (isNum(dayPct) ? pct(dayPct, 2, true) + " · " : "") + (isNum(lim.max_daily_loss) ? "Tageslimit −" + pct(lim.max_daily_loss, 0) : ""));
 
   const positions = snap.positions || [];
   const floating = positions.reduce((s, p) => s + (isNum(p.profit) ? p.profit : 0), 0);
-  $("tOpen").textContent = snap.account ? positions.length + (isNum(lim.max_open_positions) ? " / " + lim.max_open_positions : "") : "–";
-  $("tOpenSub").textContent = positions.length ? "zusammen " + money(floating, { signed: true }) : "keine offenen Trades";
+  setText("tOpen", snap.account ? positions.length + (isNum(lim.max_open_positions) ? " / " + lim.max_open_positions : "") : "–");
+  setText("tOpenSub", positions.length ? "zusammen " + money(floating, { signed: true }) : snap.account ? "keine offenen Trades" : "");
 
   const dd = risk.drawdown_pct;
-  $("tDD").textContent = isNum(dd) ? pct(dd, 1) : "–";
+  setText("tDD", isNum(dd) ? pct(dd, 1) : "–");
   const ratio = isNum(dd) && lim.max_drawdown ? Math.min(1, dd / lim.max_drawdown) : 0;
   const fill = $("tDDMeter").querySelector("span");
   fill.style.width = (ratio * 100).toFixed(1) + "%";
   fill.dataset.sev = ratio >= 0.8 ? "critical" : ratio >= 0.5 ? "warning" : "";
   $("tDDMeter").setAttribute("aria-valuenow", (ratio * 100).toFixed(0));
-  $("tDDMeter").setAttribute("aria-valuemin", "0");
-  $("tDDMeter").setAttribute("aria-valuemax", "100");
-  $("tDDSub").textContent = isNum(lim.max_drawdown) ? "Not-Aus bei " + pct(lim.max_drawdown, 0) : "";
+  setText("tDDSub", isNum(lim.max_drawdown) ? "Not-Aus bei " + pct(lim.max_drawdown, 0) : "");
 
-  $("tWin").textContent = isNum(stats.win_rate) ? pct(stats.win_rate, 0) : "–";
-  $("tWinSub").textContent = stats.count ? stats.wins + " von " + stats.count + " Trades" + (isNum(stats.profit_factor) ? " · Profit-Faktor " + new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(stats.profit_factor) : "") : "noch keine geschlossenen Trades";
+  setText("tWin", isNum(stats.win_rate) ? pct(stats.win_rate, 0) : "–");
+  setText("tWinSub", stats.count ? stats.wins + " von " + stats.count + " Trades" + (isNum(stats.profit_factor) ? " · Profit-Faktor " + new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(stats.profit_factor) : "") : "noch keine geschlossenen Trades");
   setText("tTotal", stats.count ? money(stats.total, { signed: true }) : "–", stats.count ? deltaClass(stats.total) : "");
-  $("tTotalSub").textContent = stats.count ? "bester " + money(stats.best, { signed: true }) + " · schlechtester " + money(stats.worst, { signed: true }) : "";
+  setText("tTotalSub", stats.count ? "bester " + money(stats.best, { signed: true }) + " · schlechtester " + money(stats.worst, { signed: true }) : "");
 }
 
 // ------------------------------------------------------------------ Kapitalkurve
-function niceTicks(min, max, count) {
+function niceTicks(min, max, count, minStep) {
   const span = max - min || Math.abs(max) || 1;
   const raw = span / Math.max(1, count - 1);
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const norm = raw / mag;
-  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+  const step = Math.max(minStep || 0, (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag);
   const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
   const out = [];
   for (let v = lo; v <= hi + step / 2; v += step) out.push(Math.round(v / step) * step);
-  return out;
+  if (out.length < 2) out.push(out[0] + step);
+  return { ticks: out, step };
 }
 
-function renderEquity(points) {
+function timeTicks(t0, t1, maxN) {
+  // Achsenbeschriftung an vollen Stunden bzw. Tagen ausrichten (keine doppelten Daten)
+  const H = 36e5, D = 864e5, steps = [H, 2 * H, 3 * H, 6 * H, 12 * H, D, 2 * D, 7 * D, 14 * D, 28 * D];
+  const step = steps.find((s) => (t1 - t0) / s <= maxN) || 28 * D;
+  const d = new Date(t0), out = [];
+  if (step >= D) { d.setHours(0, 0, 0, 0); if (+d < t0) d.setDate(d.getDate() + 1); }
+  else { d.setMinutes(0, 0, 0); while (+d < t0 || d.getHours() % (step / H)) d.setTime(+d + H); }
+  for (; +d <= t1; step >= D ? d.setDate(d.getDate() + step / D) : d.setTime(+d + step)) out.push(+d);
+  return { ticks: out, daily: step >= D };
+}
+
+let chartState = { idx: -1, focused: false };
+
+function renderEquity(d) {
   const host = $("equityChart");
   const tableHost = $("equityTable");
+  for (const b of document.querySelectorAll("[data-range]")) b.setAttribute("aria-pressed", String(b.dataset.range === range));
   $("btnEqTable").setAttribute("aria-pressed", String(showEqTable));
   $("btnEqTable").textContent = showEqTable ? "Als Diagramm" : "Als Tabelle";
   host.hidden = showEqTable;
   tableHost.hidden = !showEqTable;
-  const pts = points.map((p) => ({ t: parseTime(p.t), e: p.equity, b: p.balance })).filter((p) => p.t && isNum(p.e));
+  const pts = ((d.equity || {}).points || []).map((p) => ({ t: parseTime(p.t), e: p.equity, b: p.balance })).filter((p) => p.t && isNum(p.e));
+  const emptyText = isUp(d) ? "Noch keine Daten – der Verlauf erscheint nach den ersten Minuten." : "Noch keine Daten – der Verlauf erscheint, sobald der Bot läuft.";
 
   if (showEqTable) {
-    const rows = pts.slice().reverse().map((p) => el("tr", {}, el("td", {}, fmtTime(p.t.toISOString(), true)), el("td", { class: "r" }, money(p.e)), el("td", { class: "r" }, money(p.b))));
-    tableHost.replaceChildren(pts.length ? el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Zeit"), el("th", { class: "r" }, "Equity"), el("th", { class: "r" }, "Kontostand"))), el("tbody", {}, rows)) : el("p", { class: "empty" }, "Noch keine Daten."));
+    const rows = pts.slice().reverse().map((p) => el("tr", {}, el("td", {}, fmtTime(p.t, true)), el("td", { class: "r" }, money(p.e)), el("td", { class: "r" }, money(p.b))));
+    tableHost.replaceChildren(pts.length ? el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Zeit"), el("th", { class: "r", scope: "col" }, "Equity"), el("th", { class: "r", scope: "col" }, "Kontostand"))), el("tbody", {}, rows)) : el("p", { class: "empty" }, emptyText));
     return;
   }
+  const oldSvg = host.querySelector("svg");
+  chartState.focused = !!oldSvg && document.activeElement === oldSvg;
   if (!pts.length) {
-    host.replaceChildren(el("p", { class: "empty" }, "Noch keine Daten – der Verlauf erscheint, sobald der Bot läuft."));
+    host.replaceChildren(el("p", { class: "empty" }, emptyText));
     return;
   }
   const W = Math.max(280, host.clientWidth || 600), H = 250;
-  const m = { l: 62, r: 14, t: 12, b: 26 };
+  const m = { l: 66, r: 14, t: 12, b: 26 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   let lo = Math.min(...pts.map((p) => p.e)), hi = Math.max(...pts.map((p) => p.e));
   if (hi - lo < 1e-9) { lo -= Math.max(1, Math.abs(lo) * 0.001); hi += Math.max(1, Math.abs(hi) * 0.001); }
-  const ticks = niceTicks(lo, hi, 5);
+  const { ticks, step } = niceTicks(lo, hi, 5, 1);
   const y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const t0 = pts[0].t.getTime(), t1 = pts[pts.length - 1].t.getTime();
   const x = (t) => m.l + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
@@ -694,17 +864,23 @@ function renderEquity(points) {
   for (const v of ticks) {
     svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)", "stroke-width": 1 }));
     const label = svgEl("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" });
-    label.textContent = compactMoney(v);
+    label.textContent = axisMoney(v, step);
     svg.append(label);
   }
   svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: m.t + ih, y2: m.t + ih, stroke: "var(--axis)", "stroke-width": 1 }));
-  const spanDays = (t1 - t0) / 86400000;
-  const nX = Math.min(5, pts.length);
-  for (let i = 0; i < nX; i++) {
-    const t = t0 + (nX === 1 ? 0 : ((t1 - t0) * i) / (nX - 1));
-    const d = new Date(t);
-    const lbl = svgEl("text", { x: x(t), y: H - 6, "text-anchor": i === 0 && nX > 1 ? "start" : i === nX - 1 && nX > 1 ? "end" : "middle" });
-    lbl.textContent = spanDays < 2 ? d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  if (t1 > t0) {
+    const { ticks: xt, daily } = timeTicks(t0, t1, Math.max(2, Math.floor(iw / 90)));
+    for (const t of xt) {
+      const dt = new Date(t);
+      const lbl = svgEl("text", { x: x(t), y: H - 6, "text-anchor": "middle" });
+      // Über mehrere Tage: Mitternacht mit Datum beschriften, sonst die Uhrzeit
+      const midnight = dt.getHours() === 0 && dt.getMinutes() === 0;
+      lbl.textContent = daily || (midnight && t1 - t0 > 864e5) ? dt.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : dt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      svg.append(lbl);
+    }
+  } else {
+    const lbl = svgEl("text", { x: x(t0), y: H - 6, "text-anchor": "middle" });
+    lbl.textContent = fmtTime(pts[0].t);
     svg.append(lbl);
   }
   const line = pts.map((p, i) => (i ? "L" : "M") + x(p.t.getTime()).toFixed(1) + " " + y(p.e).toFixed(1)).join(" ");
@@ -719,12 +895,12 @@ function renderEquity(points) {
   // Hover-Ebene: Fadenkreuz rastet auf den nächsten Messpunkt ein
   const cross = svgEl("line", { y1: m.t, y2: m.t + ih, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" });
   const dot = svgEl("circle", { r: 4, fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" });
-  const hit = svgEl("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent" });
+  const hit = svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
   svg.append(cross, dot, hit);
   const tip = el("div", { class: "tooltip", hidden: true });
-  let idx = -1;
   function show(i) {
-    idx = Math.max(0, Math.min(pts.length - 1, i));
+    const idx = Math.max(0, Math.min(pts.length - 1, i));
+    chartState.idx = idx;
     const p = pts[idx];
     const px = x(p.t.getTime()), py = y(p.e);
     cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
@@ -732,14 +908,18 @@ function renderEquity(points) {
     tip.replaceChildren(
       el("div", { class: "tv" }, el("span", { class: "tk" }), money(p.e)),
       el("div", { class: "muted" }, "Equity · Kontostand " + money(p.b)),
-      el("div", { class: "muted" }, fmtTime(p.t.toISOString(), true)));
+      el("div", { class: "muted" }, fmtTime(p.t, true)));
     tip.hidden = false;
     const scale = host.clientWidth / W;
-    const left = px * scale, top = py * scale;
-    tip.style.left = Math.min(Math.max(0, left + 12), Math.max(0, host.clientWidth - tip.offsetWidth - 4)) + "px";
-    tip.style.top = Math.max(0, top - tip.offsetHeight - 10) + "px";
+    const w = tip.offsetWidth, h = tip.offsetHeight, hw = host.clientWidth;
+    let left = px * scale + 12;
+    if (left + w > hw - 4) left = px * scale - w - 12;
+    let top = py * scale - h - 10;
+    if (top < 0) top = py * scale + 14;
+    tip.style.left = Math.max(0, left) + "px";
+    tip.style.top = top + "px";
   }
-  function hide() { idx = -1; tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); }
+  function hide() { chartState.idx = -1; tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); }
   function nearest(clientX) {
     const r = svg.getBoundingClientRect();
     const sx = ((clientX - r.left) / r.width) * W;
@@ -748,16 +928,21 @@ function renderEquity(points) {
     return best;
   }
   hit.addEventListener("pointermove", (ev) => show(nearest(ev.clientX)));
-  hit.addEventListener("pointerleave", hide);
-  svg.addEventListener("focus", () => show(pts.length - 1));
+  hit.addEventListener("pointerleave", () => { if (document.activeElement !== svg) hide(); });
+  svg.addEventListener("focus", () => show(chartState.idx >= 0 ? chartState.idx : pts.length - 1));
   svg.addEventListener("blur", hide);
   svg.addEventListener("keydown", (ev) => {
-    if (ev.key === "ArrowLeft") { show((idx < 0 ? pts.length : idx) - 1); ev.preventDefault(); }
-    else if (ev.key === "ArrowRight") { show(idx + 1); ev.preventDefault(); }
+    if (ev.key === "ArrowLeft") { show((chartState.idx < 0 ? pts.length : chartState.idx) - 1); ev.preventDefault(); }
+    else if (ev.key === "ArrowRight") { show(chartState.idx + 1); ev.preventDefault(); }
+    else if (ev.key === "Home") { show(0); ev.preventDefault(); }
+    else if (ev.key === "End") { show(pts.length - 1); ev.preventDefault(); }
     else if (ev.key === "Escape") hide();
   });
+  const keepIdx = chartState.idx;
   const wrap = el("div", { style: "position:relative" }, svg, tip);
   host.replaceChildren(wrap);
+  if (chartState.focused) svg.focus({ preventScroll: true });
+  if (keepIdx >= 0) show(Math.min(keepIdx, pts.length - 1));
 }
 
 // ------------------------------------------------------------------ Tabellen
@@ -771,20 +956,18 @@ function plCell(v) { return el("td", { class: "r " + deltaClass(v) }, money(v, {
 
 function renderPositions(positions) {
   const rows = positions.map((p) => el("tr", {},
-    el("td", {}, p.symbol), el("td", {}, dirLabel(p.direction)), el("td", { class: "r" }, num(p.volume, 2)),
-    el("td", { class: "r" }, num(p.open_price)), el("td", { class: "r" }, num(p.sl)), el("td", { class: "r" }, num(p.tp)),
-    plCell(p.profit)));
-  $("positions").replaceChildren(table([["Symbol"], ["Richtung"], ["Lot", 1], ["Einstieg", 1], ["Stop-Loss", 1], ["Take-Profit", 1], ["G/V", 1]], rows, "Keine offenen Positionen."));
+    el("td", {}, p.symbol), el("td", {}, dirLabel(p.direction)), plCell(p.profit), el("td", { class: "r" }, num(p.volume, 2)),
+    el("td", { class: "r" }, num(p.open_price)), el("td", { class: "r" }, num(p.sl)), el("td", { class: "r" }, num(p.tp))));
+  $("positions").replaceChildren(table([["Symbol"], ["Richtung"], ["G/V", 1], ["Lot", 1], ["Einstieg", 1], ["Stop-Loss", 1], ["Take-Profit", 1]], rows, "Keine offenen Positionen."));
   const sum = positions.reduce((s, p) => s + (isNum(p.profit) ? p.profit : 0), 0);
-  $("posSum").textContent = positions.length ? "Summe " + money(sum, { signed: true }) : "";
+  setText("posSum", positions.length ? "Summe " + money(sum, { signed: true }) : "");
 }
 
 function renderTrades(trades) {
   const rows = trades.map((t) => el("tr", {},
-    el("td", { class: "num" }, fmtTime(t.close_time)), el("td", {}, t.symbol), el("td", {}, dirLabel(t.direction)),
-    el("td", { class: "r" }, num(t.volume, 2)), el("td", { class: "r" }, num(t.open_price)), el("td", { class: "r" }, num(t.close_price)),
-    el("td", {}, t.reason || "–"), plCell(t.profit)));
-  $("trades").replaceChildren(table([["Geschlossen"], ["Symbol"], ["Richtung"], ["Lot", 1], ["Einstieg", 1], ["Ausstieg", 1], ["Grund"], ["G/V", 1]], rows, "Noch keine geschlossenen Trades."));
+    el("td", { class: "num" }, fmtTime(t.close_time)), el("td", {}, t.symbol), el("td", {}, dirLabel(t.direction)), plCell(t.profit),
+    el("td", {}, t.reason || "–"), el("td", { class: "r" }, num(t.volume, 2)), el("td", { class: "r" }, num(t.open_price)), el("td", { class: "r" }, num(t.close_price))));
+  $("trades").replaceChildren(table([["Geschlossen"], ["Symbol"], ["Richtung"], ["G/V", 1], ["Grund"], ["Lot", 1], ["Einstieg", 1], ["Ausstieg", 1]], rows, "Noch keine geschlossenen Trades."));
 }
 
 // ------------------------------------------------------------------ Strategien
@@ -812,7 +995,8 @@ function renderSymbols(d, snap) {
     const dec = info.decision;
     const children = [el("div", { class: "card-head" }, el("h2", {}, sym), el("span", { class: "muted small" }, dec ? "Kerze " + fmtTime(dec.time) : "noch keine Entscheidung"))];
     if (dec) {
-      const verdict = dec.score >= (thr ?? 0.35) ? "Kaufsignal" : dec.score <= -(thr ?? 0.35) ? "Verkaufssignal" : "kein klares Signal";
+      const t = isNum(thr) ? thr : 0.35;
+      const verdict = dec.score >= t ? "Kaufsignal" : dec.score <= -t ? "Verkaufssignal" : "kein klares Signal";
       children.push(el("div", { class: "small" }, el("strong", {}, "Konsens " + signedNum(dec.score)), " · " + verdict + " · Aktion: " + dec.action));
       children.push(consensusBar(dec.score, thr));
       const w = dec.weights || {};
@@ -829,9 +1013,7 @@ function renderSymbols(d, snap) {
     }
     const kv = [];
     const model = info.model;
-    if (model) {
-      kv.push(["KI-Modell", model.accepted ? `aktiv · Trefferquote ${pct(model.val_accuracy, 1)} · Sharpe ${signedNum(model.val_sharpe)}` : "nicht aktiv – " + (model.reason || "")]);
-    }
+    if (model) kv.push(["KI-Modell", model.accepted ? `aktiv · Trefferquote ${pct(model.val_accuracy, 1)} · Sharpe ${signedNum(model.val_sharpe)}` : "nicht aktiv – " + (model.reason || "")]);
     if (info.last_optimize) kv.push(["Zuletzt gelernt", fmtTime(info.last_optimize)]);
     const news = (snap.news || {})[sym];
     if (isNum(news)) kv.push(["Nachrichtenlage", signedNum(news) + (news >= 0.2 ? " (positiv)" : news <= -0.2 ? " (negativ)" : " (neutral)")]);
@@ -847,9 +1029,8 @@ function renderSymbols(d, snap) {
     return el("div", { class: "card" }, children);
   });
   host.replaceChildren(...(cards.length ? cards : [el("p", { class: "empty" }, "Keine Symbole konfiguriert.")]));
-  $("learnHint").textContent = isNum(thr) ? "Einstieg ab Konsens ±" + new Intl.NumberFormat("de-DE").format(thr) : "";
+  setText("learnHint", isNum(thr) ? "Einstieg ab Konsens ±" + new Intl.NumberFormat("de-DE").format(thr) : "");
 }
-const openDetails = new Set();
 
 function renderCalendar(events, updatedAt) {
   const host = $("calendar");
@@ -861,7 +1042,7 @@ function renderCalendar(events, updatedAt) {
     el("span", { class: "when" }, fmtWeekday(e.time)), el("span", { class: "cur" }, e.currency), el("span", {}, e.title)))));
 }
 
-function renderNews(snap, cfg) {
+function renderNews(snap) {
   const host = $("news");
   const parts = [];
   const sentiments = snap.news || {};
@@ -887,18 +1068,35 @@ function renderLog(lines) {
 // ------------------------------------------------------------------ Start
 $("btnStart").addEventListener("click", () => action("/api/bot/start"));
 $("btnStop").addEventListener("click", () => action("/api/bot/stop", "Bot stoppen? Offene Positionen bleiben mit ihrem Stop-Loss und Take-Profit bestehen."));
+$("btnKill").addEventListener("click", () => action("/api/bot/kill", "Bot zwangsweise beenden? Nur verwenden, wenn er wirklich hängt. Offene Positionen behalten Stop-Loss und Take-Profit."));
 $("btnQuit").addEventListener("click", () => action("/api/dashboard/quit", "Dashboard beenden? Der Bot läuft im Hintergrund weiter."));
-$("btnEqTable").addEventListener("click", () => { showEqTable = !showEqTable; if (last) renderEquity(last.equity || []); });
+$("btnConfig").addEventListener("click", () => action("/api/config/open"));
+$("btnSettings").addEventListener("click", () => {
+  const s = $("settings");
+  s.hidden = !s.hidden;
+  $("btnSettings").setAttribute("aria-expanded", String(!s.hidden));
+});
+$("optAutoBot").addEventListener("change", (ev) => action("/api/settings", null, { autostart_bot: ev.target.checked }));
+$("optAutoWin").addEventListener("change", (ev) => action("/api/settings", null, { autostart_windows: ev.target.checked }));
+$("btnEqTable").addEventListener("click", () => { showEqTable = !showEqTable; if (last) { delete sigs.eq; render(last); } });
+for (const b of document.querySelectorAll("[data-range]")) {
+  b.addEventListener("click", () => {
+    range = b.dataset.range;
+    try { localStorage.setItem("tai-range", range); } catch (e) { /* egal */ }
+    for (const o of document.querySelectorAll("[data-range]")) o.setAttribute("aria-pressed", String(o.dataset.range === range));
+    refresh();
+  });
+}
 $("btnTheme").addEventListener("click", () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
   root.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("tai-theme", root.dataset.theme); } catch (e) { /* egal */ }
-  if (last) render(last, null);
 });
 try { const t = localStorage.getItem("tai-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) { /* egal */ }
+for (const o of document.querySelectorAll("[data-range]")) o.setAttribute("aria-pressed", String(o.dataset.range === range));
 let resizeTimer = null;
-window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => last && renderEquity(last.equity || []), 150); });
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (last) { delete sigs.eq; render(last); } }, 150); });
 refresh();
 setInterval(refresh, POLL_MS);
 </script>

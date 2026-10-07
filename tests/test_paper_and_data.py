@@ -68,7 +68,7 @@ def test_load_german_excel_and_utf16_csv(tmp_path):
 
 
 def test_second_bot_instance_is_refused(tmp_path):
-    from tradingai.cli import InstanceLock
+    from tradingai.status import InstanceLock
 
     a, b = InstanceLock(str(tmp_path)), InstanceLock(str(tmp_path))
     assert a.acquire()
@@ -81,7 +81,7 @@ def test_second_bot_instance_is_refused(tmp_path):
 def test_cli_reset_refused_while_bot_runs(tmp_path):
     import pytest
 
-    from tradingai.cli import InstanceLock
+    from tradingai.status import InstanceLock
 
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(f"symbols: [EURUSD]\nstate_dir: {tmp_path / 'state'}\n")

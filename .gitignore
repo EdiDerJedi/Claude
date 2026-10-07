@@ -11,3 +11,4 @@ data/*.csv
 .piptmp/
 
 state*/
+tradingai_fehler.log

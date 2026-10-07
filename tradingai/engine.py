@@ -59,7 +59,9 @@ class TradingEngine:
     def step(self) -> int:
         """Ein Durchlauf. Gibt die Anzahl Symbole zurück, für die eine neue Kerze verarbeitet wurde."""
         now = self.broker.now()
-        self.risk.update_equity(self.broker.account().equity, now)
+        acc = self.broker.account()
+        self._check_account_switch(acc)
+        self.risk.update_equity(acc.equity, now)
         self.store.append_trades(self.broker.pop_closed_trades())
         if self.risk.killed:
             self._flatten_all("Not-Aus")
@@ -82,6 +84,44 @@ class TradingEngine:
     def _phase(self, text: str) -> None:
         if self.on_phase is not None:
             self.on_phase(text)
+
+    def _account_key(self, acc) -> str:
+        if self.cfg.mode != "live":
+            return "paper"
+        return f"{acc.login}@{acc.server}" if acc.login else "live"
+
+    def _check_account_switch(self, acc) -> None:
+        """Anderes Konto als beim letzten Mal (z.B. Paper -> MT5-Demo, neues Demokonto)?
+        Dann Kennzahlen neu beginnen, sonst vermischen sich Statistik, Höchststand und Not-Aus."""
+        key = self._account_key(acc)
+        known = self.store.data.get("account_key")
+        if known is None and self.cfg.mode == "live" and self.store.dir is not None \
+                and (self.store.dir / "paper_account.json").exists():
+            known = "paper"  # state-Ordner aus einem früheren Paper-Lauf weiterverwendet
+        if known is not None and known != key:
+            log.warning("Neues Konto erkannt (%s -> %s): Statistik und Risiko-Kennzahlen beginnen neu, "
+                        "alte Daten liegen im Ordner archiv.", known, key)
+            for k in ("day", "day_start_equity", "peak_equity", "equity"):
+                self.risk.state.pop(k, None)
+            self._archive_account_files(known)
+            self.store.data["account_notice"] = {"from": known, "to": key, "time": str(self.broker.now())}
+        self.store.data["account_key"] = key
+
+    def _archive_account_files(self, old_key: str) -> None:
+        if self.store.dir is None:
+            return
+        from datetime import datetime
+
+        safe = "".join(ch if ch.isalnum() else "_" for ch in old_key)
+        target = self.store.dir / "archiv" / f"{safe}_{datetime.now():%Y%m%d-%H%M%S}"
+        for name in ("trades.csv", "equity_history.csv"):
+            src = self.store.dir / name
+            if src.exists():
+                target.mkdir(parents=True, exist_ok=True)
+                try:
+                    src.replace(target / name)
+                except OSError as exc:
+                    log.warning("%s konnte nicht archiviert werden: %s", name, exc)
 
     def _update_internet(self) -> None:
         for name, source in (("Kontext", self.context_provider), ("News", self.news), ("Kalender", self.calendar)):
@@ -349,6 +389,7 @@ class TradingEngine:
             "news": {},
             "headlines": [],
             "calendar": [],
+            "account_notice": self.store.data.get("account_notice"),
         }
         if hasattr(self.broker, "terminal_flags"):
             try:
