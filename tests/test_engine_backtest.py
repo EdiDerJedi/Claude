@@ -93,3 +93,26 @@ def test_cli_backtest_synthetic(tmp_path, capsys):
     assert "BACKTEST-ERGEBNIS" in capsys.readouterr().out
     trades = pd.read_csv(tmp_path / "out" / "equity.csv")
     assert len(trades) > 100
+
+
+def test_learning_retries_when_history_is_still_loading(cfg):
+    # MT5 liefert beim ersten Start oft noch wenig Historie: dann nicht eine Woche warten
+    df = synthetic_ohlc(1200, "H1", seed=9)
+    broker = BacktestBroker({"EURUSD": df}, {"EURUSD": default_symbol_info("EURUSD")}, 10_000, start=500)
+    store = StateStore(None)
+    engine = TradingEngine(cfg, broker, store, learn=True, raise_errors=True, rng_seed=0)
+    engine.step()  # nur 501 Bars < min_train_bars (800)
+    assert "EURUSD" not in store.data["last_optimize"]
+    while broker.i < 820:
+        broker.advance()
+    engine.step()
+    assert "EURUSD" in store.data["last_optimize"]
+    assert "EURUSD" in store.data["model_metrics"]
+
+
+def test_config_with_utf8_bom(tmp_path):
+    from tradingai.config import load_config
+
+    path = tmp_path / "config.yaml"
+    path.write_bytes("﻿mode: paper\nsymbols: [GBPUSD]\n".encode("utf-8"))
+    assert load_config(path).symbols == ["GBPUSD"]

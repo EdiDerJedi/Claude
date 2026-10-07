@@ -166,6 +166,6 @@ def load_config(path: str | Path | None) -> Config:
         raise FileNotFoundError(
             f"Konfigurationsdatei {path} nicht gefunden – kopiere config.example.yaml nach {path}"
         )
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8-sig") as fh:
         data = yaml.safe_load(fh) or {}
     return validate(_build(Config, data))

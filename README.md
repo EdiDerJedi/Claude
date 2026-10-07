@@ -115,18 +115,40 @@ Fällt eine Internetquelle aus, läuft der Bot ohne sie weiter.
 
 ## Installation
 
-Voraussetzungen: **Python 3.10 oder neuer**.
-Für den Live-Handel zusätzlich **Windows** und das **MetaTrader-5-Terminal** (das offizielle
-Python-Paket `MetaTrader5` gibt es nur für Windows). Backtests und Paper-Trading laufen auch
-unter Linux und macOS.
+### Windows (nötig für den Live-Handel)
+
+1. **Python 3.13 (64-Bit) installieren:** <https://www.python.org/downloads/windows/> →
+   bei einer **3.13.x**-Version „Windows installer (64-bit)“ wählen. Im ersten Fenster des
+   Installers den Haken bei **„Add python.exe to PATH“** setzen.
+   Nimm **nicht die allerneueste Python-Version** (3.15): Dafür gibt es das Paket
+   `MetaTrader5` noch nicht. 3.12, 3.13 oder 3.14 funktionieren.
+2. **Code herunterladen:** auf GitHub im Repository auf den grünen Button **„Code“ →
+   „Download ZIP“** klicken. Die ZIP-Datei mit Rechtsklick → **„Alle extrahieren …“** z. B.
+   nach `C:\TradingAI` entpacken. Lege den Ordner **nicht** auf den Desktop oder unter
+   „Dokumente“, wenn diese mit OneDrive synchronisiert werden – die Synchronisierung stört.
+   (Wer Git hat: `git clone https://github.com/EdiDerJedi/Claude.git C:\TradingAI`.)
+3. **Doppelklick auf `install.bat`.** Das Skript sucht ein passendes Python, legt die
+   Umgebung `.venv` an, installiert alle Pakete und erstellt `config.yaml`.
+   Meldet Windows „Der Computer wurde durch Windows geschützt“: **„Weitere Informationen“ →
+   „Trotzdem ausführen“**.
+
+Befehle gibst du in der Eingabeaufforderung im Projektordner ein: Im Explorer in den Ordner
+gehen, oben in die Adresszeile `cmd` tippen und Enter drücken. Statt `python -m tradingai`
+schreibst du unter Windows einfach **`tradingai.bat`**, z. B.:
+
+```bat
+tradingai.bat backtest --source synthetic --bars 3000
+```
+
+Den Bot startest du per **Doppelklick auf `bot_starten.bat`** (Fenster offen lassen).
+
+### macOS / Linux (Backtest und Paper-Trading)
 
 ```bash
-git clone https://github.com/EdiDerJedi/Claude.git tradingai
-cd tradingai
-python -m venv .venv
-.venv\Scripts\activate          # Windows   (Linux/macOS: source .venv/bin/activate)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-copy config.example.yaml config.yaml   # Linux/macOS: cp config.example.yaml config.yaml
+cp config.example.yaml config.yaml
 ```
 
 ### MetaTrader 5 vorbereiten (nur für `mode: live`)
@@ -142,6 +164,9 @@ copy config.example.yaml config.yaml   # Linux/macOS: cp config.example.yaml con
    optional – ohne sie nutzt der Bot das im Terminal eingeloggte Konto.
 
 ## Schritt für Schritt zum ersten Trade
+
+> Unter Windows in allen folgenden Befehlen `python -m tradingai` durch `tradingai.bat`
+> ersetzen.
 
 **1. Backtest mit synthetischen Daten** (funktioniert offline, prüft die Installation):
 
@@ -179,10 +204,16 @@ Lass den Bot **mehrere Wochen** auf dem Demokonto laufen und vergleiche mit dem 
 
 ### Dauerhaft laufen lassen
 
-Für 24/5-Betrieb eignet sich ein Windows-VPS. Starte den Bot z. B. über die
-**Windows-Aufgabenplanung** bei Systemstart mit
-`C:\pfad\.venv\Scripts\python.exe -m tradingai run` (Arbeitsverzeichnis = Projektordner).
-Mit `Strg+C` wird der Bot sauber beendet; offene Positionen behalten ihren Stop-Loss.
+Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
+
+- **Energieoptionen:** Windows-Einstellungen → System → Netzbetrieb und Energie →
+  Bildschirm und Energiesparmodus → „Gerät nach … in den Energiesparmodus versetzen“ auf **Nie**.
+- **Automatisch starten:** Aufgabenplanung → „Einfache Aufgabe erstellen“ → Trigger
+  „Beim Anmelden“ → Aktion „Programm starten“ → `C:\TradingAI\bot_starten.bat`, bei
+  „Starten in“ `C:\TradingAI` eintragen. MetaTrader 5 muss ebenfalls laufen (z. B. über
+  den Autostart-Ordner: `Win+R` → `shell:startup`).
+- **Beenden:** im Bot-Fenster `Strg+C` drücken. Die Frage „Batchvorgang abbrechen (J/N)?“
+  mit `J` beantworten. Offene Positionen behalten ihren Stop-Loss und Take-Profit.
 
 ## Befehle
 
@@ -221,6 +252,22 @@ Balken exportieren) als `data/EURUSD_H1.csv` ablegen und `--source csv` verwende
 <https://console.anthropic.com> erstellen, als Umgebungsvariable `ANTHROPIC_API_KEY` setzen und
 `internet.news_analyzer: claude` einstellen. Der Bot fragt nur, wenn neue Schlagzeilen
 erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
+
+## Fehlerbehebung (Windows und MetaTrader 5)
+
+| Meldung | Lösung |
+|---------|--------|
+| `install.bat`: „Es wurde kein passendes Python gefunden“ | Python 3.13 (64-Bit) installieren, Haken „Add python.exe to PATH“ setzen, `install.bat` erneut starten. |
+| `MT5-Initialisierung fehlgeschlagen: (-10005, 'IPC timeout')` oder `(-10003, …)` | MetaTrader 5 von Hand starten und einloggen, dann den Bot starten. MT5 und Bot nicht unterschiedlich „als Administrator“ ausführen. Bei mehreren MT5-Installationen `mt5.path` setzen. |
+| `MT5-Initialisierung fehlgeschlagen: (-6, …)` | Login, Passwort oder Server in `config.yaml` falsch – oder `login: 0` setzen und das im Terminal eingeloggte Konto verwenden. |
+| `retcode=10027` | Der Button **„Algo Trading“** in MT5 ist aus – einschalten (grün). |
+| `retcode=10018` | Markt geschlossen (Wochenende/Feiertag) – normal. |
+| `retcode=10019` | Nicht genug freie Margin – Risiko senken oder Konto aufladen (Demo). |
+| `retcode=10016` | Stops ungültig – meist bei sehr hohem Spread; später erneut. |
+| `Symbol … nicht verfügbar` | Symbolnamen genau wie in der MT5-Marktübersicht schreiben (z. B. `EURUSD.m`). |
+| `zu wenig Historie zum Lernen` | In MT5 einen Chart des Symbols im passenden Zeitrahmen öffnen und mit `Pos1` zurückscrollen; der Bot versucht es bei jeder neuen Kerze erneut. |
+| Fehler beim Laden von Yahoo-Daten | Internetverbindung/Firewall prüfen und später erneut versuchen. |
+| `config.yaml`-Fehler mit Windows-Pfaden | Pfade und Passwörter in **einfache** Anführungszeichen setzen: `path: 'C:\Program Files\MetaTrader 5\terminal64.exe'`. |
 
 ## Dateien im state-Ordner
 

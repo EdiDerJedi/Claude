@@ -1,0 +1,2 @@
+# Windows-Batchdateien brauchen CRLF-Zeilenenden - unverändert ein- und auschecken
+*.bat -text

@@ -274,7 +274,18 @@ def cmd_reset(args) -> int:
     return 0
 
 
+def _safe_console() -> None:
+    """Unter Windows kann die Ausgabe (z.B. in eine Datei umgeleitet) cp1252 sein.
+    Nicht darstellbare Zeichen werden dann ersetzt statt einen Absturz auszulösen."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv=None) -> int:
+    _safe_console()
     parser = argparse.ArgumentParser(prog="tradingai", description="Selbstlernender Trading-Bot für MetaTrader 5")
     parser.add_argument("-c", "--config", default="config.yaml", help="Pfad zur Konfiguration (Default: config.yaml)")
     sub = parser.add_subparsers(dest="command", required=True)

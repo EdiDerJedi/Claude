@@ -16,9 +16,10 @@ log_level: INFO
 
 mt5:
   login: 0                          # 0 = das im Terminal eingeloggte Konto verwenden
-  password: ""
-  server: ""
-  path: ""                          # optional: C:/Program Files/MetaTrader 5/terminal64.exe
+  password: ''                      # in EINFACHEN Anführungszeichen, z.B. 'Ab#12:x'
+  server: ''
+  path: ''                          # optional, mit EINFACHEN Anführungszeichen:
+                                    #   'C:\Program Files\MetaTrader 5\terminal64.exe'
   allow_real_account: false         # Schutz: erst auf true setzen, wenn du bewusst mit Echtgeld handeln willst
   magic: 26100501                   # Kennung der Bot-Orders (manuelle Trades werden nie angefasst)
   deviation: 20                     # max. Slippage in Points

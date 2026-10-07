@@ -137,13 +137,17 @@ class TradingEngine:
             return False
 
         df = self.broker.get_rates(symbol, self.cfg.timeframe, lc.train_bars)
+        if len(df) < lc.min_train_bars:
+            # Kein Zeitstempel setzen: Sobald mehr Historie da ist (MT5 lädt sie oft erst
+            # nach), wird bei der nächsten Kerze erneut gelernt statt erst in einer Woche.
+            log.warning("%s: zu wenig Historie zum Lernen (%d < %d Bars) – neuer Versuch bei der nächsten "
+                        "Kerze. Tipp: Chart öffnen und mit Pos1 zurückscrollen oder learning.min_train_bars "
+                        "senken.", symbol, len(df), lc.min_train_bars)
+            return False
         if due_opt:
             self.store.set_time("last_optimize", symbol, bar_time)
         if due_ml:
             self.store.set_time("last_retrain", symbol, bar_time)
-        if len(df) < lc.min_train_bars:
-            log.warning("%s: zu wenig Historie zum Lernen (%d < %d Bars)", symbol, len(df), lc.min_train_bars)
-            return False
 
         strategies = self.strategies[symbol]
         changed = False
