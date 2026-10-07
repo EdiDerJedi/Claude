@@ -586,6 +586,11 @@ function renderAlerts(d, connError) {
     }
     const acc = snap.account || {};
     if (snap.mode === "live" && acc.is_demo === false) items.push(banner("serious", "€", "Achtung: Der Bot handelt auf einem ECHTGELD-Konto."));
+    const term = snap.terminal || {};
+    const botUp = ["running", "killed", "unresponsive"].includes(st);
+    if (botUp && term.connected === false) items.push(banner("warning", "!", "MetaTrader 5 hat keine Verbindung zum Broker-Server."));
+    if (botUp && term.trade_allowed === false) items.push(banner("critical", "✕", "In MetaTrader 5 ist „Algo Trading“ ausgeschaltet – der Bot kann keine Orders senden. Den Knopf oben in MT5 auf grün schalten."));
+    if (botUp && term.tradeapi_disabled === true) items.push(banner("critical", "✕", "In MetaTrader 5 ist der Handel über Python gesperrt: Extras → Optionen → Expert Advisors → Haken bei „… über externe Python-API deaktivieren“ entfernen."));
     const lim = (risk.limits || {}).max_daily_loss;
     if (isNum(risk.daily_loss_pct) && isNum(lim) && risk.daily_loss_pct >= lim) items.push(banner("warning", "!", "Tagesverlust-Limit erreicht – bis morgen keine neuen Trades."));
   }

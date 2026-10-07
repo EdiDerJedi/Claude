@@ -60,11 +60,25 @@ class MT5Broker(Broker):
         term = mt5.terminal_info()
         if term is not None and not getattr(term, "trade_allowed", True):
             log.warning("Im MT5-Terminal ist 'Algo Trading' ausgeschaltet – Orders werden abgelehnt!")
+        if term is not None and getattr(term, "tradeapi_disabled", False):
+            log.warning("In MT5 ist der Handel über die Python-API gesperrt (Extras → Optionen → Expert Advisors: "
+                        "Haken bei '… über externe Python-API deaktivieren' entfernen) – Orders werden abgelehnt!")
         log.info("Verbunden mit MT5: Konto %s (%s), Server %s, Balance %.2f %s",
                  acc.login, "DEMO" if self.is_demo() else "ECHTGELD", acc.server, acc.balance, acc.currency)
 
     def shutdown(self) -> None:
         self.mt5.shutdown()
+
+    def terminal_flags(self) -> dict:
+        """Einstellungen im MT5-Terminal, die das Handeln verhindern würden (fürs Dashboard)."""
+        term = self.mt5.terminal_info()
+        if term is None:
+            return {}
+        return {
+            "connected": bool(getattr(term, "connected", True)),
+            "trade_allowed": bool(getattr(term, "trade_allowed", True)),
+            "tradeapi_disabled": bool(getattr(term, "tradeapi_disabled", False)),
+        }
 
     def reconnect(self) -> None:
         """Verbindung neu aufbauen, z.B. nachdem MT5 neu gestartet wurde."""

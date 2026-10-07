@@ -121,7 +121,7 @@ Fällt eine Internetquelle aus, läuft der Bot ohne sie weiter.
 1. **Python 3.13 (64-Bit) installieren:** <https://www.python.org/downloads/windows/> →
    bei einer **3.13.x**-Version „Windows installer (64-bit)“ wählen. Im ersten Fenster des
    Installers den Haken bei **„Add python.exe to PATH“** setzen.
-   Nimm **nicht die allerneueste Python-Version** (3.15): Dafür gibt es das Paket
+   Nimm **nicht Python 3.15 oder neuer** (erscheint gerade): Dafür gibt es das Paket
    `MetaTrader5` noch nicht. 3.12, 3.13 oder 3.14 funktionieren.
 2. **Code herunterladen:** auf GitHub im Repository auf den grünen Button **„Code“ →
    „Download ZIP“** klicken. Die ZIP-Datei mit Rechtsklick → **„Alle extrahieren …“** → als
@@ -163,10 +163,13 @@ cp config.example.yaml config.yaml
 ### MetaTrader 5 vorbereiten (nur für `mode: live`)
 
 1. MetaTrader 5 von deinem Broker installieren und ein **Demokonto** eröffnen
-   (Datei → Ein Konto eröffnen).
+   (Menü Datei → „Konto eröffnen“ oder im Navigator Rechtsklick auf „Konten“; viele Broker
+   bieten das Demokonto auch beim ersten Start an).
 2. Einloggen. In **Extras → Optionen → Expert Advisors** den Haken bei
    **„Algorithmischen Handel erlauben“** setzen und oben in der Symbolleiste
    **„Algo Trading“** einschalten (grün).
+   Im selben Fenster darf der Haken bei „… über externe Python-API deaktivieren“ **nicht**
+   gesetzt sein. Ist eine dieser Einstellungen falsch, zeigt das Dashboard einen Hinweis.
 3. Die Symbole, die du handeln willst, im Fenster **Marktübersicht** einblenden. Trage die
    Namen **genau so** in `config.yaml` ein (manche Broker nutzen Endungen wie `EURUSD.m`).
 4. Das Terminal muss laufen, solange der Bot handelt. Login-Daten in `config.yaml` sind
@@ -239,8 +242,9 @@ Dashboard ihn ebenfalls an und kann ihn stoppen.
 
 Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
 
-- **Energieoptionen:** Windows-Einstellungen → System → Netzbetrieb und Energie →
-  Bildschirm und Energiesparmodus → „Gerät nach … in den Energiesparmodus versetzen“ auf **Nie**.
+- **Energieoptionen:** Windows-Einstellungen → System → „Energie“ bzw. „Energie & Akku“
+  (je nach Version auch „Stromversorgung & Akku“) → Bildschirm-/Energiespar-Timeouts →
+  Energiesparmodus bei Netzbetrieb auf **Nie**. Tipp: in der Windows-Suche „Energiesparmodus“ eintippen.
 - **Automatisch starten (unsichtbar im Hintergrund):** Aufgabenplanung → „Einfache Aufgabe
   erstellen“ → Trigger „Beim Anmelden“ → Aktion „Programm starten“ → Programm
   `C:\TradingAI\.venv\Scripts\pythonw.exe`, Argumente `-m tradingai run`, Starten in
@@ -307,7 +311,7 @@ erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
 | `install.bat`: „Es wurde kein passendes Python gefunden“ | Python 3.13 (64-Bit) installieren, Haken „Add python.exe to PATH“ setzen, `install.bat` erneut starten. |
 | `MT5-Initialisierung fehlgeschlagen: (-10005, 'IPC timeout')` oder `(-10003, …)` | MetaTrader 5 von Hand starten und einloggen, dann den Bot starten. MT5 und Bot nicht unterschiedlich „als Administrator“ ausführen. Bei mehreren MT5-Installationen `mt5.path` setzen. |
 | `MT5-Initialisierung fehlgeschlagen: (-6, …)` | Login, Passwort oder Server in `config.yaml` falsch – oder `login: 0` setzen und das im Terminal eingeloggte Konto verwenden. |
-| `retcode=10027` | Der Button **„Algo Trading“** in MT5 ist aus – einschalten (grün). |
+| `retcode=10027` | Der Button **„Algo Trading“** in MT5 ist aus – einschalten (grün). Ist er grün: unter Extras → Optionen → Expert Advisors den Haken bei „… über externe Python-API deaktivieren“ (engl. „Disable automated trading via external Python API“) entfernen. |
 | `retcode=10018` | Markt geschlossen (Wochenende/Feiertag) – normal. |
 | `retcode=10019` | Nicht genug freie Margin – Risiko senken oder Konto aufladen (Demo). |
 | `retcode=10016` | Stops ungültig – meist bei sehr hohem Spread; später erneut. |

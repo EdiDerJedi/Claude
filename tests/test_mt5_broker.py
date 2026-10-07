@@ -48,7 +48,7 @@ class FakeMT5:
                                leverage=100, trade_mode=self.trade_mode, margin_free=9_000.0)
 
     def terminal_info(self):
-        return SimpleNamespace(trade_allowed=True)
+        return SimpleNamespace(trade_allowed=True, tradeapi_disabled=False, connected=True)
 
     def symbol_select(self, symbol, enable):
         return True
@@ -204,3 +204,8 @@ def test_real_account_is_refused(monkeypatch):
         cli.make_broker(cfg)
     cfg.mt5.allow_real_account = True
     assert cli.make_broker(cfg) is not None
+
+
+def test_terminal_flags(broker):
+    b, _ = broker
+    assert b.terminal_flags() == {"connected": True, "trade_allowed": True, "tradeapi_disabled": False}

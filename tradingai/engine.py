@@ -350,6 +350,11 @@ class TradingEngine:
             "headlines": [],
             "calendar": [],
         }
+        if hasattr(self.broker, "terminal_flags"):
+            try:
+                out["terminal"] = self.broker.terminal_flags()
+            except Exception:
+                out["terminal"] = {}
         if self.news is not None:
             out["news"] = {s: self.news.pair_sentiment(s) for s in self.cfg.symbols}
             items = sorted(self.news.items, key=lambda i: i.published or datetime.min.replace(tzinfo=timezone.utc),
