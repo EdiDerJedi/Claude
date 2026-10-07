@@ -101,9 +101,20 @@ def _parse_date(text: str | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def parse_feed(xml_text: str, source: str = "") -> list:
-    """Unterstützt RSS 2.0 und Atom."""
-    root = ET.fromstring(xml_text)
+def parse_feed(data: str | bytes, source: str = "") -> list:
+    """Unterstützt RSS 2.0 und Atom. Bytes werden bevorzugt, damit der XML-Parser
+    Zeichensatz und Byte-Order-Mark (BOM) selbst korrekt erkennt."""
+    if isinstance(data, bytes):
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[3:]
+        data = data.lstrip()
+        head = data[:300].lower()
+    else:
+        data = data.lstrip("\ufeff \t\r\n")
+        head = data[:300].lower().encode("utf-8", "ignore")
+    if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+        raise ValueError("Webseite statt RSS-Feed erhalten (Adresse geändert oder Bot-Schutz)")
+    root = ET.fromstring(data)
     items = []
     for el in root.iter():
         tag = el.tag.split("}")[-1]
@@ -123,6 +134,9 @@ def parse_feed(xml_text: str, source: str = "") -> list:
     return items
 
 
+_FEED_FAILURES: dict = {}
+
+
 def fetch_feeds(urls, timeout: float = 10.0, session: requests.Session | None = None) -> list:
     session = session or requests.Session()
     items, seen = [], set()
@@ -130,12 +144,22 @@ def fetch_feeds(urls, timeout: float = 10.0, session: requests.Session | None = 
         try:
             resp = session.get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
             resp.raise_for_status()
-            for item in parse_feed(resp.text, source=url):
-                if item.key not in seen:
-                    seen.add(item.key)
-                    items.append(item)
+            parsed = parse_feed(resp.content, source=url)
         except Exception as exc:
-            log.warning("News-Feed %s nicht lesbar: %s", url, exc)
+            failures = _FEED_FAILURES.get(url, 0) + 1
+            _FEED_FAILURES[url] = failures
+            if failures == 1:
+                log.warning("News-Feed %s nicht lesbar: %s – der Bot läuft ohne ihn weiter "
+                            "(weitere Fehler dieses Feeds werden nicht mehr angezeigt)", url, exc)
+            else:
+                log.debug("News-Feed %s weiterhin nicht lesbar: %s", url, exc)
+            continue
+        if _FEED_FAILURES.pop(url, None):
+            log.info("News-Feed %s ist wieder erreichbar", url)
+        for item in parsed:
+            if item.key not in seen:
+                seen.add(item.key)
+                items.append(item)
     return items
 
 

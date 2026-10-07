@@ -51,7 +51,8 @@ class TradingEngine:
         return out
 
     # ================================================================ Hauptschleife
-    def step(self) -> None:
+    def step(self) -> int:
+        """Ein Durchlauf. Gibt die Anzahl Symbole zurück, für die eine neue Kerze verarbeitet wurde."""
         now = self.broker.now()
         self.risk.update_equity(self.broker.account().equity, now)
         self.store.append_trades(self.broker.pop_closed_trades())
@@ -59,9 +60,10 @@ class TradingEngine:
             self._flatten_all("Not-Aus")
         self._update_internet()
 
+        processed = 0
         for symbol in self.cfg.symbols:
             try:
-                self._process_symbol(symbol)
+                processed += bool(self._process_symbol(symbol))
             except Exception:
                 if self.raise_errors:
                     raise
@@ -70,6 +72,7 @@ class TradingEngine:
         self.store.append_trades(self.broker.pop_closed_trades())
         self.store.data["selector"] = self.selector.to_dict()
         self.store.save()
+        return processed
 
     def _update_internet(self) -> None:
         for name, source in (("Kontext", self.context_provider), ("News", self.news), ("Kalender", self.calendar)):
@@ -80,15 +83,15 @@ class TradingEngine:
             except Exception as exc:
                 log.warning("%s-Aktualisierung fehlgeschlagen: %s", name, exc)
 
-    def _process_symbol(self, symbol: str) -> None:
+    def _process_symbol(self, symbol: str) -> bool:
         df = self.broker.get_rates(symbol, self.cfg.timeframe, self.cfg.history_bars)
         if len(df) < MIN_BARS:
             log.warning("%s: nur %d Bars verfügbar (mind. %d nötig)", symbol, len(df), MIN_BARS)
-            return
+            return False
         bar_time = df.index[-1]
         last = self.store.get_time("last_bar", symbol)
         if last is not None and bar_time <= last:
-            return  # keine neue Bar -> nichts zu tun
+            return False  # keine neue Bar -> nichts zu tun
 
         info = self.broker.symbol_info(symbol)
         cost = self._cost_rate(info, df)
@@ -116,8 +119,8 @@ class TradingEngine:
             "action": action,
         }
         top = ", ".join(f"{k} {v:.0%}" for k, v in sorted(weights.items(), key=lambda x: -x[1])[:3])
-        log.log(logging.INFO if action != "halten" else logging.DEBUG,
-                "%s %s | Konsens %+.2f | Gewichte: %s | %s", symbol, bar_time, score, top, action)
+        log.info("%s %s | Konsens %+.2f | Gewichte: %s | %s", symbol, bar_time, score, top, action)
+        return True
 
     @staticmethod
     def _cost_rate(info, df: pd.DataFrame) -> float:

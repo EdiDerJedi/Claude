@@ -64,7 +64,6 @@ internet:
   news_feeds:
     - https://www.fxstreet.com/rss/news
     - https://www.cnbc.com/id/100003114/device/rss/rss.html
-    - https://finance.yahoo.com/news/rssindex
     - https://www.federalreserve.gov/feeds/press_all.xml
     - https://www.ecb.europa.eu/rss/press.html
   news_analyzer: lexicon            # lexicon (kostenlos) oder claude (braucht ANTHROPIC_API_KEY)

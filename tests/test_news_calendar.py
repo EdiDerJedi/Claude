@@ -111,3 +111,33 @@ def test_calendar_survives_network_errors():
     cal = EconomicCalendar("x", fetch=boom)
     cal.update(NOW)
     assert cal.events == [] and cal.blocking_event(["USD"], NOW) is None
+
+
+def test_parse_feed_bytes_with_bom_and_html_detection():
+    data = b"\xef\xbb\xbf\n  " + RSS.encode("utf-8")
+    assert len(parse_feed(data)) == 2
+    with pytest.raises(ValueError, match="Webseite"):
+        parse_feed(b"<!DOCTYPE html><html><body>Access denied</body></html>")
+
+
+def test_broken_feed_is_reported_only_once(caplog):
+    from tradingai.data import news
+
+    class Resp:
+        def __init__(self, content, status=200):
+            self.content, self.status = content, status
+
+        def raise_for_status(self):
+            if self.status >= 400:
+                raise RuntimeError(f"{self.status} Client Error")
+
+    class Session:
+        def get(self, url, **kwargs):
+            return Resp(b"", 404) if "dead" in url else Resp(RSS.encode("utf-8"))
+
+    news._FEED_FAILURES.clear()
+    with caplog.at_level("WARNING", logger="tradingai.data.news"):
+        for _ in range(3):
+            items = news.fetch_feeds(["https://dead.example/rss", "https://ok.example/rss"], session=Session())
+            assert len(items) == 2
+    assert sum("dead.example" in r.getMessage() for r in caplog.records) == 1

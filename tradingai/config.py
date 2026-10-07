@@ -66,7 +66,6 @@ class InternetConfig:
         default_factory=lambda: [
             "https://www.fxstreet.com/rss/news",
             "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-            "https://finance.yahoo.com/news/rssindex",
             "https://www.federalreserve.gov/feeds/press_all.xml",
             "https://www.ecb.europa.eu/rss/press.html",
         ]

@@ -92,7 +92,7 @@ Alles Gelernte wird im Ordner `state/` gespeichert und nach einem Neustart weite
 | Quelle | Wofür | Kosten |
 |--------|-------|--------|
 | **Yahoo Finance** | Kurse für Paper-Trading/Backtests, Kontextmärkte (VIX, S&P 500, DXY, US10Y) als Lernmerkmale | kostenlos |
-| **RSS-Nachrichten** (FXStreet, CNBC, Yahoo, Fed, EZB – frei konfigurierbar) | Nachrichten-Stimmung je Währung; Einstiege gegen eine klar negative Nachrichtenlage werden blockiert | kostenlos |
+| **RSS-Nachrichten** (FXStreet, CNBC, Fed, EZB – frei konfigurierbar) | Nachrichten-Stimmung je Währung; Einstiege gegen eine klar negative Nachrichtenlage werden blockiert | kostenlos |
 | **Wirtschaftskalender** (ForexFactory-Feed) | keine neuen Trades 30 min vor/nach wichtigen Terminen (z. B. US-Arbeitsmarktdaten, Zinsentscheide) | kostenlos |
 | **Claude (optional)** | bessere Analyse der Nachrichten statt Wortliste (`internet.news_analyzer: claude`) | API-Kosten, braucht `ANTHROPIC_API_KEY` |
 

@@ -121,6 +121,7 @@ def make_broker(cfg: Config):
 
     infos = {}
     for s in cfg.symbols:
+        log.info("Lade Kursdaten für %s ...", s)
         df = fetch(s)
         infos[s] = default_symbol_info(s, float(df["close"].iloc[-1]), cfg.paper.symbol_specs)
     refresh = min(60.0, minutes(cfg.timeframe) * 60 / 4)
@@ -178,7 +179,9 @@ def cmd_run(args) -> int:
     try:
         while not stop["flag"]:
             try:
-                engine.step()
+                if engine.step():
+                    log.info("Warte auf die nächste %s-Kerze (Prüfung alle %d Sekunden). Beenden mit Strg+C.",
+                             cfg.timeframe, cfg.loop_seconds)
             except ConnectionError as exc:
                 log.error("Verbindungsproblem: %s – neuer Versuch im nächsten Durchlauf", exc)
             except Exception:
