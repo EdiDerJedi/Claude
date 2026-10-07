@@ -27,6 +27,7 @@ from .data.symbols import calendar_currencies, default_symbol_info, yahoo_ticker
 from .engine import TradingEngine
 from .risk import RiskManager
 from .state import StateStore
+from .status import BotStatus
 from .timeframes import minutes
 
 log = logging.getLogger("tradingai")
@@ -39,17 +40,18 @@ DISCLAIMER = (
 START_PRICES = {"EURUSD": 1.10, "GBPUSD": 1.27, "USDJPY": 150.0, "XAUUSD": 2300.0, "AUDUSD": 0.66}
 
 
-def setup_logging(level: str, state_dir: str | None = None) -> None:
+def setup_logging(level: str, state_dir: str | None = None, log_name: str = "tradingai.log") -> None:
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(level.upper())
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S")
-    console = logging.StreamHandler(sys.stdout)
-    console.setFormatter(fmt)
-    root.addHandler(console)
+    if sys.stdout is not None:  # ohne Konsolenfenster (pythonw) gibt es kein stdout
+        console = logging.StreamHandler(sys.stdout)
+        console.setFormatter(fmt)
+        root.addHandler(console)
     if state_dir:
         Path(state_dir).mkdir(parents=True, exist_ok=True)
-        fh = logging.handlers.RotatingFileHandler(Path(state_dir) / "tradingai.log", maxBytes=5_000_000,
+        fh = logging.handlers.RotatingFileHandler(Path(state_dir) / log_name, maxBytes=5_000_000,
                                                   backupCount=3, encoding="utf-8")
         fh.setFormatter(fmt)
         root.addHandler(fh)
@@ -229,11 +231,26 @@ def _lock_or_exit(cfg: Config) -> InstanceLock:
     return lock
 
 
-def _sleep(seconds: float, stop: dict) -> None:
-    for _ in range(int(seconds * 10)):
+def _sleep(seconds: float, stop: dict, status: BotStatus | None = None) -> None:
+    for i in range(int(seconds * 10)):
         if stop["flag"]:
             return
+        if status is not None and i % 10 == 0 and status.stop_requested():
+            stop["flag"] = True
+            log.info("Stopp-Anfrage vom Dashboard erhalten – beende ... (offene Positionen behalten ihren SL/TP)")
+            return
         time.sleep(0.1)
+
+
+def _publish(engine: TradingEngine, status: BotStatus) -> None:
+    """Momentaufnahme und Kapitalverlauf fürs Dashboard – darf den Handel nie stören."""
+    try:
+        snap = engine.snapshot()
+        snap["next_check_seconds"] = engine.cfg.loop_seconds
+        status.write_snapshot(snap)
+        status.record_equity(snap["account"]["balance"], snap["account"]["equity"])
+    except Exception as exc:
+        log.debug("Dashboard-Status konnte nicht geschrieben werden: %s", exc)
 
 
 def cmd_run(args) -> int:
@@ -242,6 +259,8 @@ def cmd_run(args) -> int:
     _disable_quickedit()
     lock = _lock_or_exit(cfg)
     log.warning(DISCLAIMER)
+    status = BotStatus(cfg.state_dir, cfg.mode)
+    status.start()
 
     stop = {"flag": False}
 
@@ -255,34 +274,52 @@ def cmd_run(args) -> int:
 
     store = StateStore(cfg.state_dir)
     broker = None
-    while broker is None and not stop["flag"]:
-        try:
-            broker = make_broker(cfg, store)
-        except (ConnectionError, OSError, RuntimeError) as exc:
-            if args.once:
-                raise
-            what = "MetaTrader 5 ist noch nicht bereit" if cfg.mode == "live" else "Kursdaten nicht ladbar"
-            hint = " Ist MT5 gestartet und eingeloggt?" if cfg.mode == "live" else ""
-            log.warning("%s (%s) – neuer Versuch in 30 Sekunden.%s", what, exc, hint)
-            _sleep(30, stop)
+    try:
+        status.phase = "verbindet mit MetaTrader 5" if cfg.mode == "live" else "lädt Kursdaten"
+        while broker is None and not stop["flag"]:
+            try:
+                broker = make_broker(cfg, store)
+            except (ConnectionError, OSError, RuntimeError) as exc:
+                if args.once:
+                    raise
+                what = "MetaTrader 5 ist noch nicht bereit" if cfg.mode == "live" else "Kursdaten nicht ladbar"
+                hint = " Ist MT5 gestartet und eingeloggt?" if cfg.mode == "live" else ""
+                log.warning("%s (%s) – neuer Versuch in 30 Sekunden.%s", what, exc, hint)
+                status.phase = "wartet auf MetaTrader 5" if cfg.mode == "live" else "wartet auf Kursdaten"
+                _sleep(30, stop, status)
+    except BaseException:
+        status.stop("Start fehlgeschlagen")
+        lock.release()
+        raise
     if broker is None:
+        status.stop("beendet")
         lock.release()
         return 0
 
     context, news, calendar = build_internet(cfg)
-    engine = TradingEngine(cfg, broker, store, news=news, calendar=calendar, context_provider=context)
+
+    def on_phase(text: str) -> None:
+        status.phase = text
+
+    engine = TradingEngine(cfg, broker, store, news=news, calendar=calendar, context_provider=context,
+                           on_phase=on_phase)
     log.info("Bot gestartet: Modus %s, Symbole %s, Timeframe %s", cfg.mode.upper(), ", ".join(cfg.symbols),
              cfg.timeframe)
 
+    reason = "beendet"
     try:
         while not stop["flag"]:
             try:
                 if cfg.mode == "live":
                     check_account(cfg, broker, announce=False)
+                status.phase = "prüft auf neue Kerzen"
                 if engine.step():
                     log.info("Warte auf die nächste %s-Kerze (Prüfung alle %d Sekunden). Beenden mit Strg+C.",
                              cfg.timeframe, cfg.loop_seconds)
+                status.phase = f"wartet auf die nächste {cfg.timeframe}-Kerze"
+                _publish(engine, status)
             except ConnectionError as exc:
+                status.phase = "Verbindungsproblem – verbindet neu"
                 log.error("Verbindungsproblem: %s – verbinde neu ...", exc)
                 if hasattr(broker, "reconnect"):
                     try:
@@ -295,10 +332,17 @@ def cmd_run(args) -> int:
                 log.exception("Unerwarteter Fehler im Durchlauf")
             if args.once:
                 break
-            _sleep(cfg.loop_seconds, stop)
+            _sleep(cfg.loop_seconds, stop, status)
+    except SystemExit:
+        reason = "Echtgeld-Sperre ausgelöst"
+        raise
+    except BaseException:
+        reason = "unerwartet beendet"
+        raise
     finally:
         store.save()
         broker.shutdown()
+        status.stop(reason)
         lock.release()
     return 0
 
@@ -396,6 +440,36 @@ def _safe_console() -> None:
             pass
 
 
+def _message_box(text: str) -> None:
+    """Fehlermeldung anzeigen, wenn kein Konsolenfenster da ist (Start per Doppelklick)."""
+    if sys.stdout is not None:
+        print(text, file=sys.stderr)
+        return
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, text, "TradingAI", 0x10)
+        except Exception:
+            pass
+
+
+def cmd_dashboard(args) -> int:
+    from .dashboard import Dashboard
+
+    cfg = load_config(args.config) if args.config else Config()
+    if args.port:
+        cfg.dashboard.port = args.port
+    setup_logging(cfg.log_level, cfg.state_dir, log_name="dashboard.log")
+    try:
+        Dashboard(cfg, args.config).serve(open_browser=cfg.dashboard.open_browser and not args.no_browser)
+    except Exception as exc:
+        log.exception("Dashboard konnte nicht gestartet werden")
+        _message_box(f"Das Dashboard konnte nicht gestartet werden:\n{exc}")
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     _safe_console()
     parser = argparse.ArgumentParser(prog="tradingai", description="Selbstlernender Trading-Bot für MetaTrader 5")
@@ -422,9 +496,16 @@ def main(argv=None) -> int:
     sub.add_parser("news", help="Nachrichten und Termine anzeigen").set_defaults(func=cmd_news)
     sub.add_parser("reset-killswitch", help="Not-Aus zurücksetzen").set_defaults(func=cmd_reset)
 
+    db = sub.add_parser("dashboard", help="Dashboard im Browser öffnen")
+    db.add_argument("--port", type=int, help="Port (Default: dashboard.port, 8765)")
+    db.add_argument("--no-browser", action="store_true", help="Browser nicht automatisch öffnen")
+    db.set_defaults(func=cmd_dashboard)
+
     args = parser.parse_args(argv)
-    if args.command != "backtest" and not Path(args.config).exists():
-        parser.error(f"{args.config} nicht gefunden – kopiere zuerst config.example.yaml nach config.yaml")
-    if args.command == "backtest" and not Path(args.config).exists():
-        args.config = None  # Backtest geht auch ohne Konfigurationsdatei
+    optional = ("backtest", "dashboard")  # funktionieren auch ohne Konfigurationsdatei
+    if not Path(args.config).exists():
+        if args.command in optional:
+            args.config = None
+        else:
+            parser.error(f"{args.config} nicht gefunden – kopiere zuerst config.example.yaml nach config.yaml")
     return args.func(args)

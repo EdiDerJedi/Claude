@@ -132,7 +132,8 @@ class _SimBrokerMixin:
 
     def account(self) -> AccountInfo:
         eq = self.sim.equity()
-        return AccountInfo(balance=self.sim.balance, equity=eq, is_demo=True, free_margin=eq)
+        return AccountInfo(balance=self.sim.balance, equity=eq, is_demo=True, free_margin=eq,
+                           server="Simulation")
 
     def symbol_info(self, symbol: str) -> SymbolInfo:
         return self.sim.infos[symbol]

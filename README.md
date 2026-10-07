@@ -24,6 +24,7 @@ Parameter an**, wenn sich der Markt verändert.
 4. [Sicherheit und Risikomanagement](#sicherheit-und-risikomanagement)
 5. [Installation](#installation)
 6. [Schritt für Schritt zum ersten Trade](#schritt-für-schritt-zum-ersten-trade)
+   - [Dashboard (Bedienoberfläche)](#dashboard-bedienoberfläche)
 7. [Befehle](#befehle)
 8. [Konfiguration](#konfiguration)
 9. [Dateien im state-Ordner](#dateien-im-state-ordner)
@@ -211,14 +212,39 @@ Lass den Bot **mehrere Wochen** auf dem Demokonto laufen und vergleiche mit dem 
 **5. Echtgeld** – nur nach erfolgreichen Demo-Wochen: `mt5.allow_real_account: true` und
 `risk.risk_per_trade` eher auf `0.005` (0,5 %) senken.
 
+### Dashboard (Bedienoberfläche)
+
+Statt im schwarzen Fenster lässt sich alles im Browser bedienen: **Doppelklick auf
+„TradingAI Dashboard“ auf dem Desktop** (legt `install.bat` an) oder auf
+`dashboard_starten.bat`. Es öffnet sich <http://127.0.0.1:8765> mit:
+
+- **Bot-Status** (läuft / gestoppt / reagiert nicht / unerwartet beendet) und den Knöpfen
+  **Bot starten** und **Bot stoppen** – der Bot läuft dann unsichtbar im Hintergrund
+- **Equity, Kontostand, heutiger Gewinn/Verlust, Rückgang vom Höchststand** (mit Not-Aus-Grenze),
+  Trefferquote und Gesamtergebnis
+- **Kapitalverlauf** als Diagramm (mit Tabellenansicht)
+- **Offene Positionen** mit Stop-Loss, Take-Profit und aktuellem Gewinn/Verlust
+- **Letzte Trades** mit Grund (Stop-Loss, Take-Profit, Signal)
+- **Strategien & Lernen** je Symbol: Konsens, Gewicht jeder Strategie, Status des KI-Modells,
+  gelernte Einstellungen
+- **Wichtige Wirtschaftstermine**, **Nachrichtenlage** und das **Protokoll**
+- Hinweise bei Not-Aus (mit Knopf zum Zurücksetzen), Echtgeld-Konto oder Tageslimit
+
+Das Dashboard und der Bot sind getrennt: **Browser oder Dashboard schließen stoppt den Bot
+nicht.** Gestoppt wird er nur mit „Bot stoppen“ (oder `Strg+C`, wenn er im Fenster läuft). Das
+Dashboard ist nur auf diesem PC erreichbar. Läuft der Bot schon über `bot_starten.bat`, zeigt das
+Dashboard ihn ebenfalls an und kann ihn stoppen.
+
 ### Dauerhaft laufen lassen
 
 Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
 
 - **Energieoptionen:** Windows-Einstellungen → System → Netzbetrieb und Energie →
   Bildschirm und Energiesparmodus → „Gerät nach … in den Energiesparmodus versetzen“ auf **Nie**.
-- **Automatisch starten:** Aufgabenplanung → „Einfache Aufgabe erstellen“ → Trigger
-  „Beim Anmelden“ → Aktion „Programm starten“ → `C:\TradingAI\bot_starten.bat`. Auf der
+- **Automatisch starten (unsichtbar im Hintergrund):** Aufgabenplanung → „Einfache Aufgabe
+  erstellen“ → Trigger „Beim Anmelden“ → Aktion „Programm starten“ → Programm
+  `C:\TradingAI\.venv\Scripts\pythonw.exe`, Argumente `-m tradingai run`, Starten in
+  `C:\TradingAI`. (Mit sichtbarem Fenster stattdessen `C:\TradingAI\bot_starten.bat`.) Auf der
   letzten Seite den Haken bei „Beim Klicken auf „Fertig stellen“ die Eigenschaften für diese
   Aufgabe öffnen“ setzen, dann:
   - Reiter **„Einstellungen“**: Haken bei **„Aufgabe beenden, falls Ausführung länger als:
@@ -244,6 +270,7 @@ Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
 | `python -m tradingai status` | Gewichte, gelernte Parameter, Modellqualität, Risiko-Status |
 | `python -m tradingai news` | aktuelle Nachrichtenstimmung und wichtige Termine |
 | `python -m tradingai reset-killswitch` | Not-Aus nach Prüfung zurücksetzen |
+| `python -m tradingai dashboard [--port N] [--no-browser]` | Dashboard im Browser öffnen |
 
 Mit `-c andere.yaml` lässt sich eine andere Konfiguration verwenden.
 
@@ -304,6 +331,9 @@ erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
 | `sentiment_log.csv` | Historie der Nachrichtenstimmung |
 | `paper_account.json` | Kontostand und Positionen im Paper-Modus |
 | `tradingai.log` | Protokoll (rotierend) |
+| `heartbeat.json`, `status.json` | Lebenszeichen und Momentaufnahme des Bots für das Dashboard |
+| `equity_history.csv` | Verlauf von Kontostand und Equity (alle 5 Minuten) |
+| `dashboard.log`, `bot_stderr.log` | Protokoll des Dashboards bzw. Startfehler des Bots |
 
 Ordner löschen = Bot fängt mit dem Lernen von vorne an.
 

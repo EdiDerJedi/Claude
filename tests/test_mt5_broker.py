@@ -18,7 +18,7 @@ class FakeMT5:
     ORDER_TIME_GTC = 0
     TRADE_ACTION_DEAL, TRADE_ACTION_SLTP = 1, 6
     TRADE_RETCODE_DONE, TRADE_RETCODE_DONE_PARTIAL = 10009, 10010
-    DEAL_ENTRY_OUT, DEAL_TYPE_BUY, DEAL_TYPE_SELL = 1, 0, 1
+    DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_TYPE_BUY, DEAL_TYPE_SELL = 0, 1, 0, 1
 
     def __init__(self, trade_mode=0, filling_mode=2, tick_size=0.00001):
         self.trade_mode = trade_mode
@@ -81,7 +81,10 @@ class FakeMT5:
         return SimpleNamespace(retcode=self.TRADE_RETCODE_DONE, order=777, price=request.get("price", 0.0),
                                comment="done")
 
-    def history_deals_get(self, date_from, date_to):
+    def history_deals_get(self, date_from=None, date_to=None, position=None):
+        if position is not None:
+            return [SimpleNamespace(ticket=900 + position, entry=self.DEAL_ENTRY_IN, price=1.1, time=1_700_000_000,
+                                    position_id=position)]
         return list(self.deals)
 
 
@@ -96,7 +99,8 @@ def broker():
 def test_connect_uses_credentials(broker):
     b, fake = broker
     assert fake.init_args[1] == {"login": 123, "password": "x", "server": "Demo-Server"}
-    assert b.account().is_demo
+    acc = b.account()
+    assert acc.is_demo and acc.login == 123 and acc.server == "Demo-Server"
 
 
 def test_rates_drop_unfinished_bar(broker):
@@ -174,6 +178,7 @@ def test_closed_trades_only_once_only_own_and_not_after_restart():
                                       swap=0.0, comment="sl"))
     trades = b.pop_closed_trades()
     assert len(trades) == 1 and trades[0].profit == pytest.approx(-21.0) and trades[0].direction == -1
+    assert trades[0].open_price == 1.1  # Einstiegspreis aus dem Eröffnungs-Deal
     assert b.pop_closed_trades() == []
     # Neustart mit gespeichertem Journal-Zustand: nichts doppelt
     restarted = MT5Broker(MT5Config(), mt5_module=fake, journal_state=journal)

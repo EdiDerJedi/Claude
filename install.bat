@@ -57,6 +57,9 @@ if exist ".piptmp" rmdir /s /q ".piptmp" >nul 2>&1
 if not exist "config.yaml" copy /y "config.example.yaml" "config.yaml" >nul
 if exist "config.yaml" echo config.yaml ist vorhanden.
 
+echo Erstelle die Desktop-Verknuepfung "TradingAI Dashboard" ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\TradingAI Dashboard.lnk'); $s.TargetPath='%~dp0dashboard_starten.bat'; $s.WorkingDirectory='%~dp0'; $s.WindowStyle=7; $s.IconLocation='%~dp0.venv\Scripts\pythonw.exe,0'; $s.Save()" >nul 2>&1 || echo Hinweis: Verknuepfung nicht moeglich - starte das Dashboard mit dashboard_starten.bat.
+
 echo.
 echo Pruefe die Installation ...
 ".venv\Scripts\python.exe" -c "import MetaTrader5, tradingai; print('OK - MetaTrader5-Paket Version', MetaTrader5.__version__)" || goto fehler
@@ -68,7 +71,8 @@ echo ============================================
 echo Naechste Schritte:
 echo   1. config.yaml im Editor anpassen
 echo   2. Funktionstest:  tradingai.bat backtest --source synthetic --bars 3000
-echo   3. Bot starten:    Doppelklick auf bot_starten.bat
+echo   3. Dashboard:      Doppelklick auf "TradingAI Dashboard" auf dem Desktop
+echo                      (oder dashboard_starten.bat) - dort den Bot starten
 echo.
 pause
 exit /b 0

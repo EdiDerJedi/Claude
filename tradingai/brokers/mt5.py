@@ -93,6 +93,8 @@ class MT5Broker(Broker):
             leverage=int(acc.leverage),
             is_demo=acc.trade_mode == self.mt5.ACCOUNT_TRADE_MODE_DEMO,
             free_margin=float(acc.margin_free),
+            login=int(getattr(acc, "login", 0) or 0),
+            server=str(getattr(acc, "server", "") or ""),
         )
 
     def _raw_info(self, symbol: str):
@@ -251,6 +253,17 @@ class MT5Broker(Broker):
         }
         return self._send(request)
 
+    def _entry_of(self, position_id: int, fallback: datetime) -> tuple[float, datetime]:
+        """Einstiegspreis und -zeit einer Position aus ihrem Eröffnungs-Deal."""
+        try:
+            deals = self.mt5.history_deals_get(position=int(position_id)) or []
+        except Exception:
+            deals = []
+        for d in deals:
+            if d.entry == self.mt5.DEAL_ENTRY_IN:
+                return float(d.price), datetime.fromtimestamp(d.time, tz=timezone.utc).replace(tzinfo=None)
+        return 0.0, fallback
+
     def pop_closed_trades(self) -> list[ClosedTrade]:
         now = datetime.now(timezone.utc)
         # Deal-Zeiten sind Serverzeit (oft UTC+2/+3) – daher großzügiges Fenster; doppelte
@@ -270,9 +283,10 @@ class MT5Broker(Broker):
             when = datetime.fromtimestamp(d.time, tz=timezone.utc).replace(tzinfo=None)
             # Ein schließender Kauf-Deal beendet eine Short-Position und umgekehrt
             direction = -1 if d.type == self.mt5.DEAL_TYPE_BUY else 1
+            open_price, open_time = self._entry_of(d.position_id, when)
             out.append(ClosedTrade(
                 ticket=int(d.position_id), symbol=d.symbol, direction=direction, volume=float(d.volume),
-                open_price=0.0, close_price=float(d.price), open_time=when, close_time=when,
+                open_price=open_price, close_price=float(d.price), open_time=open_time, close_time=when,
                 profit=float(d.profit + d.commission + d.swap), reason=d.comment or "", comment=d.comment or "",
             ))
         self.journal["seen_deals"] = sorted(seen)[-2000:]

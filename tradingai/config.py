@@ -91,12 +91,20 @@ class PaperConfig:
     symbol_specs: dict = field(default_factory=dict)  # Overrides, z.B. {EURUSD: {spread_points: 12}}
 
 
+@dataclass
+class DashboardConfig:
+    host: str = "127.0.0.1"  # nur dieser PC; aus Sicherheitsgründen nicht ändern
+    port: int = 8765
+    open_browser: bool = True
+
+
 SECTIONS = {
     "mt5": MT5Config,
     "risk": RiskConfig,
     "learning": LearningConfig,
     "internet": InternetConfig,
     "paper": PaperConfig,
+    "dashboard": DashboardConfig,
 }
 
 
@@ -114,6 +122,7 @@ class Config:
     learning: LearningConfig = field(default_factory=LearningConfig)
     internet: InternetConfig = field(default_factory=InternetConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
 
 def _build(cls, data: dict, prefix: str = ""):

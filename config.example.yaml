@@ -83,3 +83,7 @@ paper:
   data_source: yahoo                # yahoo | csv | synthetic (synthetic nur für Backtests)
   csv_dir: data                     # CSV-Dateien: data/EURUSD_H1.csv oder data/EURUSD.csv
   symbol_specs: {}                  # z.B. {EURUSD: {spread_points: 12}}
+
+dashboard:
+  port: 8765                        # Dashboard im Browser: http://127.0.0.1:8765
+  open_browser: true

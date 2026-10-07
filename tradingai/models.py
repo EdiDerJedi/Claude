@@ -31,6 +31,8 @@ class AccountInfo:
     leverage: int = 100
     is_demo: bool = True
     free_margin: float = 0.0
+    login: int = 0
+    server: str = ""
 
 
 @dataclass

@@ -27,8 +27,9 @@ MIN_BARS = 250
 class TradingEngine:
     def __init__(self, cfg: Config, broker: Broker, store: StateStore, news=None, calendar=None,
                  context_provider=None, learn: bool | None = None, raise_errors: bool = False,
-                 rng_seed: int | None = None):
+                 rng_seed: int | None = None, on_phase=None):
         self.cfg = cfg
+        self.on_phase = on_phase  # Rückmeldung für das Dashboard, was der Bot gerade tut
         self.broker = broker
         self.store = store
         self.news = news
@@ -78,6 +79,10 @@ class TradingEngine:
         self.store.save()
         return processed
 
+    def _phase(self, text: str) -> None:
+        if self.on_phase is not None:
+            self.on_phase(text)
+
     def _update_internet(self) -> None:
         for name, source in (("Kontext", self.context_provider), ("News", self.news), ("Kalender", self.calendar)):
             if source is None:
@@ -88,6 +93,7 @@ class TradingEngine:
                 log.warning("%s-Aktualisierung fehlgeschlagen: %s", name, exc)
 
     def _process_symbol(self, symbol: str) -> bool:
+        self._phase(f"prüft {symbol}")
         df = self.broker.get_rates(symbol, self.cfg.timeframe, self.cfg.history_bars)
         if len(df) < MIN_BARS:
             log.warning("%s: nur %d Bars verfügbar (mind. %d nötig)", symbol, len(df), MIN_BARS)
@@ -106,6 +112,7 @@ class TradingEngine:
         self.selector.update(symbol, df, signals, cost)
 
         # 2) Periodisch: Parameter optimieren und ML-Modell neu trainieren
+        self._phase(f"lernt / entscheidet {symbol}")
         if self.learn and self._maybe_learn(symbol, bar_time, cost):
             signals = {n: s.generate(df) for n, s in self.strategies[symbol].items()}
 
@@ -293,3 +300,71 @@ class TradingEngine:
             res = self.broker.close_position(p, reason)
             log.warning("%s: Position %s wegen %s geschlossen (%s)", p.symbol, p.ticket, reason,
                         "ok" if res.ok else res.message)
+
+    # ================================================================== Dashboard
+    def snapshot(self) -> dict:
+        """Momentaufnahme für das Dashboard (wird nach jedem Durchlauf gespeichert)."""
+        from datetime import datetime, timezone
+
+        from .status import iso
+
+        acc = self.broker.account()
+        risk = self.risk.state
+        peak = risk.get("peak_equity") or acc.equity
+        day_start = risk.get("day_start_equity") or acc.equity
+        rc = self.cfg.risk
+        out = {
+            "updated_at": iso(datetime.now(timezone.utc)),
+            "mode": self.cfg.mode,
+            "timeframe": self.cfg.timeframe,
+            "symbols": list(self.cfg.symbols),
+            "account": {
+                "balance": acc.balance, "equity": acc.equity, "currency": acc.currency,
+                "leverage": acc.leverage, "is_demo": acc.is_demo, "free_margin": acc.free_margin,
+                "login": acc.login, "server": acc.server,
+            },
+            "positions": [
+                {"ticket": p.ticket, "symbol": p.symbol, "direction": p.direction, "volume": p.volume,
+                 "open_price": p.open_price, "sl": p.sl, "tp": p.tp, "profit": p.profit,
+                 "open_time": str(p.open_time)}
+                for p in self.broker.positions()
+            ],
+            "risk": {
+                "day_start_equity": day_start,
+                "daily_pl": acc.equity - day_start,
+                "daily_loss_pct": self.risk.daily_loss(),
+                "peak_equity": peak,
+                "drawdown_pct": max(0.0, 1.0 - acc.equity / peak) if peak else 0.0,
+                "killed": bool(risk.get("killed")),
+                "kill_reason": risk.get("kill_reason", ""),
+                "limits": {
+                    "risk_per_trade": rc.risk_per_trade, "max_daily_loss": rc.max_daily_loss,
+                    "max_drawdown": rc.max_drawdown, "max_open_positions": rc.max_open_positions,
+                },
+            },
+            "learning": {
+                "entry_threshold": self.cfg.learning.entry_threshold,
+                "exit_threshold": self.cfg.learning.exit_threshold,
+            },
+            "news": {},
+            "headlines": [],
+            "calendar": [],
+        }
+        if self.news is not None:
+            out["news"] = {s: self.news.pair_sentiment(s) for s in self.cfg.symbols}
+            items = sorted(self.news.items, key=lambda i: i.published or datetime.min.replace(tzinfo=timezone.utc),
+                           reverse=True)
+            out["headlines"] = [
+                {"title": i.title, "published": iso(i.published) if i.published else None, "source": i.source}
+                for i in items[:8]
+            ]
+        if self.calendar is not None:
+            currencies = sorted({c for s in self.cfg.symbols
+                                 for c in calendar_currencies(s, self.cfg.internet.symbol_currencies)})
+            events = [e for e in self.calendar.upcoming(currencies, hours=48)
+                      if e.impact.lower() in self.calendar.impacts]
+            out["calendar"] = [
+                {"time": iso(e.time), "currency": e.currency, "title": e.title, "impact": e.impact}
+                for e in events[:12]
+            ]
+        return out
