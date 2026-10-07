@@ -127,8 +127,9 @@ Fällt eine Internetquelle aus, läuft der Bot ohne sie weiter.
    nach `C:\TradingAI` entpacken. Lege den Ordner **nicht** auf den Desktop oder unter
    „Dokumente“, wenn diese mit OneDrive synchronisiert werden – die Synchronisierung stört.
    (Wer Git hat: `git clone https://github.com/EdiDerJedi/Claude.git C:\TradingAI`.)
-3. **Doppelklick auf `install.bat`.** Das Skript sucht ein passendes Python, legt die
-   Umgebung `.venv` an, installiert alle Pakete und erstellt `config.yaml`.
+3. **Doppelklick auf `install.bat`.** Das Skript sucht ein passendes Python (fehlt es, wird
+   Python 3.13 automatisch über winget installiert), legt die Umgebung `.venv` an,
+   installiert alle Pakete (bei Störungen automatisch bis zu drei Versuche) und erstellt `config.yaml`.
    Meldet Windows „Der Computer wurde durch Windows geschützt“: **„Weitere Informationen“ →
    „Trotzdem ausführen“**.
 
@@ -257,6 +258,7 @@ erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
 
 | Meldung | Lösung |
 |---------|--------|
+| `install.bat`: „Could not install packages due to an OSError … No such file or directory … pip-unpack …“ | Meist blockiert ein Virenscanner die Installation. `install.bat` einfach erneut starten (bereits geladene Pakete werden wiederverwendet, es versucht es automatisch bis zu dreimal). Hilft das nicht: Virenscanner kurz pausieren oder den Projektordner als Ausnahme eintragen. |
 | `install.bat`: „Es wurde kein passendes Python gefunden“ | Python 3.13 (64-Bit) installieren, Haken „Add python.exe to PATH“ setzen, `install.bat` erneut starten. |
 | `MT5-Initialisierung fehlgeschlagen: (-10005, 'IPC timeout')` oder `(-10003, …)` | MetaTrader 5 von Hand starten und einloggen, dann den Bot starten. MT5 und Bot nicht unterschiedlich „als Administrator“ ausführen. Bei mehreren MT5-Installationen `mt5.path` setzen. |
 | `MT5-Initialisierung fehlgeschlagen: (-6, …)` | Login, Passwort oder Server in `config.yaml` falsch – oder `login: 0` setzen und das im Terminal eingeloggte Konto verwenden. |

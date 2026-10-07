@@ -8,3 +8,4 @@ state/
 reports/
 data/*.csv
 *.log
+.piptmp/
