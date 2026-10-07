@@ -20,11 +20,18 @@ class FakeMT5:
     TRADE_RETCODE_DONE, TRADE_RETCODE_DONE_PARTIAL = 10009, 10010
     DEAL_ENTRY_OUT, DEAL_TYPE_BUY, DEAL_TYPE_SELL = 1, 0, 1
 
-    def __init__(self, trade_mode=0, filling_mode=2):
+    def __init__(self, trade_mode=0, filling_mode=2, tick_size=0.00001):
         self.trade_mode = trade_mode
         self.filling_mode = filling_mode
+        self.tick_size = tick_size
         self.requests = []
         self.init_args = None
+        self.deals = [
+            SimpleNamespace(ticket=50, magic=26100501, entry=1, type=1, position_id=1, symbol="EURUSD", volume=0.1,
+                            price=1.105, time=1_700_000_500, profit=50.0, commission=-0.7, swap=-0.3, comment="tp"),
+            SimpleNamespace(ticket=51, magic=0, entry=1, type=1, position_id=9, symbol="EURUSD", volume=1.0,
+                            price=1.105, time=1_700_000_500, profit=10.0, commission=0, swap=0, comment=""),
+        ]
 
     def initialize(self, *args, **kwargs):
         self.init_args = (args, kwargs)
@@ -47,7 +54,7 @@ class FakeMT5:
         return True
 
     def symbol_info(self, symbol):
-        return SimpleNamespace(digits=5, point=0.00001, trade_tick_size=0.00001, trade_tick_value=1.0,
+        return SimpleNamespace(digits=5, point=0.00001, trade_tick_size=self.tick_size, trade_tick_value=1.0,
                                trade_contract_size=100_000, volume_min=0.01, volume_max=50.0, volume_step=0.01,
                                spread=12, trade_stops_level=10, filling_mode=self.filling_mode)
 
@@ -75,12 +82,7 @@ class FakeMT5:
                                comment="done")
 
     def history_deals_get(self, date_from, date_to):
-        return [
-            SimpleNamespace(ticket=50, magic=26100501, entry=1, type=1, position_id=1, symbol="EURUSD", volume=0.1,
-                            price=1.105, time=1_700_000_500, profit=50.0, commission=-0.7, swap=-0.3, comment="tp"),
-            SimpleNamespace(ticket=51, magic=0, entry=1, type=1, position_id=9, symbol="EURUSD", volume=1.0,
-                            price=1.105, time=1_700_000_500, profit=10.0, commission=0, swap=0, comment=""),
-        ]
+        return list(self.deals)
 
 
 @pytest.fixture
@@ -130,8 +132,26 @@ def test_stops_respect_broker_minimum_distance(broker):
     b.open_position("EURUSD", -1, 0.1, sl=1.10005, tp=1.09999)
     req = fake.requests[-1]
     assert req["price"] == 1.10000  # Verkauf zum Bid
-    assert req["sl"] >= 1.10000 + 10 * 0.00001 - 1e-9
-    assert req["tp"] <= 1.10000 - 10 * 0.00001 + 1e-9
+    # MT5 prüft Stops einer Short-Position gegen den Ask (1.10012), Mindestabstand 10 Points
+    assert req["sl"] >= 1.10012 + 10 * 0.00001 - 1e-9
+    assert req["tp"] <= 1.10012 - 10 * 0.00001 + 1e-9
+
+
+def test_prices_rounded_to_tick_size():
+    fake = FakeMT5(tick_size=0.00005)
+    b = MT5Broker(MT5Config(), mt5_module=fake)
+    b.open_position("EURUSD", 1, 0.1, sl=1.09123, tp=1.11177)
+    req = fake.requests[-1]
+    assert round(req["sl"] / 0.00005, 6).is_integer()
+    assert round(req["tp"] / 0.00005, 6).is_integer()
+
+
+def test_trailing_modify_skipped_when_too_close(broker):
+    b, fake = broker
+    p = b.positions("EURUSD")[0]  # Long, Bid 1.10000
+    n = len(fake.requests)
+    res = b.modify_position(p, 1.09995, p.tp)
+    assert not res.ok and len(fake.requests) == n
 
 
 def test_close_and_modify(broker):
@@ -144,11 +164,26 @@ def test_close_and_modify(broker):
     assert fake.requests[-1]["action"] == fake.TRADE_ACTION_SLTP
 
 
-def test_closed_trades_only_once_and_only_own(broker):
-    b, _ = broker
+def test_closed_trades_only_once_only_own_and_not_after_restart():
+    fake = FakeMT5()
+    journal = {}
+    b = MT5Broker(MT5Config(), mt5_module=fake, journal_state=journal)
+    assert b.pop_closed_trades() == []  # erster Start: alte Deals nur merken, nicht nachtragen
+    fake.deals.append(SimpleNamespace(ticket=60, magic=26100501, entry=1, type=0, position_id=2, symbol="EURUSD",
+                                      volume=0.2, price=1.099, time=1_700_090_000, profit=-20.0, commission=-1.0,
+                                      swap=0.0, comment="sl"))
     trades = b.pop_closed_trades()
-    assert len(trades) == 1 and trades[0].profit == pytest.approx(49.0)
+    assert len(trades) == 1 and trades[0].profit == pytest.approx(-21.0) and trades[0].direction == -1
     assert b.pop_closed_trades() == []
+    # Neustart mit gespeichertem Journal-Zustand: nichts doppelt
+    restarted = MT5Broker(MT5Config(), mt5_module=fake, journal_state=journal)
+    assert restarted.pop_closed_trades() == []
+
+
+def test_empty_password_and_server_not_passed():
+    fake = FakeMT5()
+    MT5Broker(MT5Config(login=123), mt5_module=fake).connect()
+    assert fake.init_args[1] == {"login": 123}
 
 
 def test_real_account_is_refused(monkeypatch):

@@ -38,6 +38,10 @@ class TradingEngine:
         self.learn = cfg.learning.enabled if learn is None else learn
         self.raise_errors = raise_errors
         self.bpy = bars_per_year(cfg.timeframe)
+        # Woher die Kurse kommen. Wechselt die Quelle (z.B. Paper/Yahoo in UTC -> MT5 in
+        # Serverzeit), wird sofort neu gelernt statt mit fremden Daten weiterzumachen.
+        self.source = "mt5" if cfg.mode == "live" else f"paper:{cfg.paper.data_source}"
+        store.data.setdefault("learn_source", {})
         self.rng = np.random.default_rng(rng_seed)
         lc = cfg.learning
         self.selector = StrategySelector(decay=lc.decay, temperature=lc.temperature).load(store.data.get("selector"))
@@ -89,6 +93,7 @@ class TradingEngine:
             log.warning("%s: nur %d Bars verfügbar (mind. %d nötig)", symbol, len(df), MIN_BARS)
             return False
         bar_time = df.index[-1]
+        self._check_source(symbol)
         last = self.store.get_time("last_bar", symbol)
         if last is not None and bar_time <= last:
             return False  # keine neue Bar -> nichts zu tun
@@ -131,6 +136,16 @@ class TradingEngine:
     def _due(self, key: str, symbol: str, bar_time, hours: float) -> bool:
         last = self.store.get_time(key, symbol)
         return last is None or bar_time - last >= timedelta(hours=hours)
+
+    def _check_source(self, symbol: str) -> None:
+        sources = self.store.data["learn_source"]
+        known = sources.get(symbol)
+        if known is not None and known != self.source:
+            log.info("%s: Datenquelle gewechselt (%s -> %s) – lerne sofort neu mit den neuen Daten",
+                     symbol, known, self.source)
+            for key in ("last_bar", "last_optimize", "last_retrain"):
+                self.store.data[key].pop(symbol, None)
+        sources[symbol] = self.source
 
     def _maybe_learn(self, symbol: str, bar_time, cost: float, force: bool = False) -> bool:
         lc = self.cfg.learning
@@ -192,6 +207,7 @@ class TradingEngine:
             if len(df) < MIN_BARS:
                 log.warning("%s: keine ausreichenden Daten", symbol)
                 continue
+            self._check_source(symbol)
             info = self.broker.symbol_info(symbol)
             self._maybe_learn(symbol, df.index[-1], self._cost_rate(info, df), force=True)
         self.store.save()

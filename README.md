@@ -123,8 +123,10 @@ Fällt eine Internetquelle aus, läuft der Bot ohne sie weiter.
    Nimm **nicht die allerneueste Python-Version** (3.15): Dafür gibt es das Paket
    `MetaTrader5` noch nicht. 3.12, 3.13 oder 3.14 funktionieren.
 2. **Code herunterladen:** auf GitHub im Repository auf den grünen Button **„Code“ →
-   „Download ZIP“** klicken. Die ZIP-Datei mit Rechtsklick → **„Alle extrahieren …“** z. B.
-   nach `C:\TradingAI` entpacken. Lege den Ordner **nicht** auf den Desktop oder unter
+   „Download ZIP“** klicken. Die ZIP-Datei mit Rechtsklick → **„Alle extrahieren …“** → als
+   Ziel nur `C:\` eintragen → „Extrahieren“. Die ZIP enthält einen Unterordner (z. B.
+   `Claude-claude-metatrader-trading-ai-w9jf0h`) – benenne ihn in **`TradingAI`** um, dann liegt
+   `install.bat` direkt in `C:\TradingAI`. Lege den Ordner **nicht** auf den Desktop oder unter
    „Dokumente“, wenn diese mit OneDrive synchronisiert werden – die Synchronisierung stört.
    (Wer Git hat: `git clone https://github.com/EdiDerJedi/Claude.git C:\TradingAI`.)
 3. **Doppelklick auf `install.bat`.** Das Skript sucht ein passendes Python (fehlt es, wird
@@ -141,7 +143,12 @@ schreibst du unter Windows einfach **`tradingai.bat`**, z. B.:
 tradingai.bat backtest --source synthetic --bars 3000
 ```
 
-Den Bot startest du per **Doppelklick auf `bot_starten.bat`** (Fenster offen lassen).
+In PowerShell (z. B. über Rechtsklick → „Im Terminal öffnen“) schreibst du `.\tradingai.bat …`.
+
+Den Bot startest du per **Doppelklick auf `bot_starten.bat`** (Fenster offen lassen). Es kann
+immer nur **ein** Bot pro `state`-Ordner laufen; ein zweiter Start wird mit einer Meldung
+abgelehnt. Verliert MetaTrader 5 die Verbindung oder ist beim Start noch nicht bereit,
+versucht der Bot es automatisch erneut.
 
 ### macOS / Linux (Backtest und Paper-Trading)
 
@@ -192,7 +199,8 @@ python -m tradingai train   # einmal vorab lernen (optional, passiert sonst beim
 python -m tradingai run
 ```
 
-**4. Demokonto über MetaTrader 5** – in `config.yaml` `mode: live` setzen, dann:
+**4. Demokonto über MetaTrader 5** – in `config.yaml` `mode: live` setzen, dann (beim Wechsel
+von Paper zu MT5 lernt die KI automatisch neu mit den Kursen deines Brokers):
 
 ```bash
 python -m tradingai run
@@ -210,11 +218,21 @@ Für 24/5-Betrieb eignet sich ein Windows-VPS. Auf dem eigenen PC:
 - **Energieoptionen:** Windows-Einstellungen → System → Netzbetrieb und Energie →
   Bildschirm und Energiesparmodus → „Gerät nach … in den Energiesparmodus versetzen“ auf **Nie**.
 - **Automatisch starten:** Aufgabenplanung → „Einfache Aufgabe erstellen“ → Trigger
-  „Beim Anmelden“ → Aktion „Programm starten“ → `C:\TradingAI\bot_starten.bat`, bei
-  „Starten in“ `C:\TradingAI` eintragen. MetaTrader 5 muss ebenfalls laufen (z. B. über
-  den Autostart-Ordner: `Win+R` → `shell:startup`).
+  „Beim Anmelden“ → Aktion „Programm starten“ → `C:\TradingAI\bot_starten.bat`. Auf der
+  letzten Seite den Haken bei „Beim Klicken auf „Fertig stellen“ die Eigenschaften für diese
+  Aufgabe öffnen“ setzen, dann:
+  - Reiter **„Einstellungen“**: Haken bei **„Aufgabe beenden, falls Ausführung länger als:
+    3 Tage“ entfernen** – sonst beendet Windows den Bot nach drei Tagen.
+  - Reiter **„Bedingungen“**: Haken bei „Aufgabe nur starten, falls Computer im
+    Netzbetrieb ausgeführt wird“ entfernen (wichtig bei Laptops).
+
+  MetaTrader 5 muss ebenfalls laufen, z. B. über den Autostart-Ordner (`Win+R` →
+  `shell:startup` → Verknüpfung zu MT5 hineinlegen). Startet der Bot vor MT5, wartet er
+  automatisch, bis MT5 bereit ist.
 - **Beenden:** im Bot-Fenster `Strg+C` drücken. Die Frage „Batchvorgang abbrechen (J/N)?“
-  mit `J` beantworten. Offene Positionen behalten ihren Stop-Loss und Take-Profit.
+  mit **`N`** beantworten – dann bleibt das Fenster offen und zeigt „Der Bot wurde beendet.“
+  (`J` schließt es sofort; beides ist ungefährlich). Offene Positionen behalten ihren
+  Stop-Loss und Take-Profit.
 
 ## Befehle
 
@@ -267,6 +285,11 @@ erschienen sind; bei Fehlern fällt er automatisch auf die Wortliste zurück.
 | `retcode=10019` | Nicht genug freie Margin – Risiko senken oder Konto aufladen (Demo). |
 | `retcode=10016` | Stops ungültig – meist bei sehr hohem Spread; später erneut. |
 | `Symbol … nicht verfügbar` | Symbolnamen genau wie in der MT5-Marktübersicht schreiben (z. B. `EURUSD.m`). |
+| `Der Bot läuft bereits mit dem Ordner …` | Es ist schon ein Bot-Fenster offen (evtl. minimiert oder über die Aufgabenplanung gestartet). Erst dieses mit `Strg+C` beenden. `train` und `reset-killswitch` gehen nur, wenn der Bot gestoppt ist. |
+| `MetaTrader 5 ist noch nicht bereit … neuer Versuch in 30 Sekunden` | MT5 starten und einloggen – der Bot verbindet sich dann von selbst. |
+| Im Fenster tut sich nichts, Titel beginnt mit „Auswählen“ | Es wurde Text markiert; `Esc` drücken. (Der Bot schaltet diese Windows-Funktion beim Start normalerweise selbst ab.) |
+| `trades.csv ist gerade geöffnet (Excel?)` | Excel schließen – die Einträge werden automatisch nachgetragen. |
+| Installation scheitert immer wieder | Den Ordner `.venv` löschen und `install.bat` erneut starten. |
 | `zu wenig Historie zum Lernen` | In MT5 einen Chart des Symbols im passenden Zeitrahmen öffnen und mit `Pos1` zurückscrollen; der Bot versucht es bei jeder neuen Kerze erneut. |
 | Fehler beim Laden von Yahoo-Daten | Internetverbindung/Firewall prüfen und später erneut versuchen. |
 | `config.yaml`-Fehler mit Windows-Pfaden | Pfade und Passwörter in **einfache** Anführungszeichen setzen: `path: 'C:\Program Files\MetaTrader 5\terminal64.exe'`. |

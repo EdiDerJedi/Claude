@@ -33,18 +33,24 @@ def _import_mt5():
 
 
 class MT5Broker(Broker):
-    def __init__(self, cfg: MT5Config, mt5_module=None):
+    def __init__(self, cfg: MT5Config, mt5_module=None, journal_state: dict | None = None):
         self.cfg = cfg
         self.mt5 = mt5_module or _import_mt5()
-        self._last_deal_check = datetime.now(timezone.utc) - timedelta(days=1)
-        self._seen_deals: set = set()
+        # Bereits ins Trade-Journal übernommene Deals; wird von der Engine mitgespeichert,
+        # damit nach einem Neustart nichts doppelt eingetragen wird.
+        self.journal = journal_state if journal_state is not None else {}
 
     # ------------------------------------------------------------ Verbindung
     def connect(self) -> None:
         mt5 = self.mt5
         kwargs = {}
         if self.cfg.login:
-            kwargs.update(login=int(self.cfg.login), password=self.cfg.password, server=self.cfg.server)
+            kwargs["login"] = int(self.cfg.login)
+            # Leere Werte nicht übergeben: dann nimmt MT5 die im Terminal gespeicherten Zugangsdaten
+            if self.cfg.password:
+                kwargs["password"] = str(self.cfg.password)
+            if self.cfg.server:
+                kwargs["server"] = str(self.cfg.server)
         ok = mt5.initialize(self.cfg.path, **kwargs) if self.cfg.path else mt5.initialize(**kwargs)
         if not ok:
             raise ConnectionError(f"MT5-Initialisierung fehlgeschlagen: {mt5.last_error()}")
@@ -59,6 +65,14 @@ class MT5Broker(Broker):
 
     def shutdown(self) -> None:
         self.mt5.shutdown()
+
+    def reconnect(self) -> None:
+        """Verbindung neu aufbauen, z.B. nachdem MT5 neu gestartet wurde."""
+        try:
+            self.mt5.shutdown()
+        except Exception:
+            pass
+        self.connect()
 
     def is_demo(self) -> bool:
         acc = self.mt5.account_info()
@@ -162,24 +176,38 @@ class MT5Broker(Broker):
         return OrderResult(ok, ticket, float(getattr(result, "price", 0.0) or 0.0),
                            f"retcode={result.retcode} {getattr(result, 'comment', '')}")
 
+    @staticmethod
+    def _norm(price: float, info) -> float:
+        """Preis auf die Tick-Größe des Symbols runden (sonst lehnt der Server ab)."""
+        if not price:
+            return 0.0
+        tick = float(getattr(info, "trade_tick_size", 0) or info.point)
+        return round(round(price / tick) * tick, int(info.digits))
+
+    def _fit_stops(self, info, direction: int, sl: float, tp: float, bid: float, ask: float):
+        """Mindestabstand des Brokers einhalten. MT5 prüft SL/TP einer Long-Position gegen den
+        Bid und einer Short-Position gegen den Ask."""
+        ref = bid if direction == 1 else ask
+        min_dist = (float(getattr(info, "trade_stops_level", 0) or 0) + 1) * info.point
+        if sl and (ref - sl) * direction < min_dist:
+            sl = ref - direction * min_dist
+        if tp and (tp - ref) * direction < min_dist:
+            tp = ref + direction * min_dist
+        return self._norm(sl, info), self._norm(tp, info)
+
     def open_position(self, symbol, direction, volume, sl, tp, comment="") -> OrderResult:
         info = self._raw_info(symbol)
         bid, ask = self.quote(symbol)
         price = ask if direction == 1 else bid
-        # Mindestabstand des Brokers für Stops beachten
-        min_dist = float(getattr(info, "trade_stops_level", 0)) * info.point
-        if sl and abs(price - sl) < min_dist:
-            sl = price - direction * min_dist
-        if tp and abs(tp - price) < min_dist:
-            tp = price + direction * min_dist
+        sl, tp = self._fit_stops(info, direction, sl, tp, bid, ask)
         request = {
             "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
             "volume": float(volume),
             "type": self.mt5.ORDER_TYPE_BUY if direction == 1 else self.mt5.ORDER_TYPE_SELL,
             "price": price,
-            "sl": round(sl, info.digits) if sl else 0.0,
-            "tp": round(tp, info.digits) if tp else 0.0,
+            "sl": sl,
+            "tp": tp,
             "deviation": int(self.cfg.deviation),
             "magic": int(self.cfg.magic),
             "comment": comment[:31],
@@ -208,25 +236,37 @@ class MT5Broker(Broker):
 
     def modify_position(self, position, sl, tp) -> OrderResult:
         info = self._raw_info(position.symbol)
+        bid, ask = self.quote(position.symbol)
+        ref = bid if position.direction == 1 else ask
+        min_dist = (float(getattr(info, "trade_stops_level", 0) or 0) + 1) * info.point
+        if sl and (ref - sl) * position.direction < min_dist:
+            return OrderResult(False, message="neuer Stop-Loss läge zu nah am Kurs – übersprungen")
         request = {
             "action": self.mt5.TRADE_ACTION_SLTP,
             "symbol": position.symbol,
             "position": int(position.ticket),
-            "sl": round(sl, info.digits) if sl else 0.0,
-            "tp": round(tp, info.digits) if tp else 0.0,
+            "sl": self._norm(sl, info),
+            "tp": self._norm(tp, info),
             "magic": int(self.cfg.magic),
         }
         return self._send(request)
 
     def pop_closed_trades(self) -> list[ClosedTrade]:
         now = datetime.now(timezone.utc)
-        deals = self.mt5.history_deals_get(self._last_deal_check - timedelta(hours=1), now + timedelta(hours=1))
-        self._last_deal_check = now
+        # Deal-Zeiten sind Serverzeit (oft UTC+2/+3) – daher großzügiges Fenster; doppelte
+        # Einträge verhindert die gespeicherte Ticket-Liste.
+        deals = self.mt5.history_deals_get(now - timedelta(days=3), now + timedelta(days=2))
+        own = sorted((d for d in deals or [] if d.magic == self.cfg.magic and d.entry == self.mt5.DEAL_ENTRY_OUT),
+                     key=lambda d: (d.time, d.ticket))
+        seen = set(self.journal.get("seen_deals", []))
+        first_run = "seen_deals" not in self.journal
         out = []
-        for d in deals or []:
-            if d.magic != self.cfg.magic or d.entry != self.mt5.DEAL_ENTRY_OUT or d.ticket in self._seen_deals:
+        for d in own:
+            if d.ticket in seen:
                 continue
-            self._seen_deals.add(d.ticket)
+            seen.add(d.ticket)
+            if first_run:
+                continue  # beim allerersten Start nur den Bestand merken, nichts nachtragen
             when = datetime.fromtimestamp(d.time, tz=timezone.utc).replace(tzinfo=None)
             # Ein schließender Kauf-Deal beendet eine Short-Position und umgekehrt
             direction = -1 if d.type == self.mt5.DEAL_TYPE_BUY else 1
@@ -235,4 +275,5 @@ class MT5Broker(Broker):
                 open_price=0.0, close_price=float(d.price), open_time=when, close_time=when,
                 profit=float(d.profit + d.commission + d.swap), reason=d.comment or "", comment=d.comment or "",
             ))
+        self.journal["seen_deals"] = sorted(seen)[-2000:]
         return out

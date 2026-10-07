@@ -9,3 +9,5 @@ reports/
 data/*.csv
 *.log
 .piptmp/
+
+state*/

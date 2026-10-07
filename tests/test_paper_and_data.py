@@ -54,3 +54,39 @@ def test_cli_status_and_reset(tmp_path, capsys):
     assert "AKTIV" in capsys.readouterr().out
     assert main(["-c", str(cfg_file), "reset-killswitch"]) == 0
     assert StateStore(tmp_path / "state").data["risk"]["killed"] is False
+
+
+def test_load_german_excel_and_utf16_csv(tmp_path):
+    german = tmp_path / "de.csv"
+    german.write_text("Datum;Open;High;Low;Close\n02.01.2024;1,1043;1,1045;1,1038;1,1040\n"
+                      "03.01.2024;1,1040;1,1050;1,1030;1,1045\n".replace("Datum", "date"), encoding="utf-8")
+    df = load_csv(german)
+    assert df.index[1] == pd.Timestamp("2024-01-03") and df["close"].iloc[0] == 1.104
+    utf16 = tmp_path / "u16.csv"
+    utf16.write_text("time,open,high,low,close\n2024-01-02 00:00,1,2,0.5,1.5\n", encoding="utf-16")
+    assert load_csv(utf16)["high"].iloc[0] == 2.0
+
+
+def test_second_bot_instance_is_refused(tmp_path):
+    from tradingai.cli import InstanceLock
+
+    a, b = InstanceLock(str(tmp_path)), InstanceLock(str(tmp_path))
+    assert a.acquire()
+    assert not b.acquire()
+    a.release()
+    assert b.acquire()
+    b.release()
+
+
+def test_cli_reset_refused_while_bot_runs(tmp_path):
+    import pytest
+
+    from tradingai.cli import InstanceLock
+
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"symbols: [EURUSD]\nstate_dir: {tmp_path / 'state'}\n")
+    running = InstanceLock(str(tmp_path / "state"))
+    assert running.acquire()
+    with pytest.raises(SystemExit, match="läuft bereits"):
+        main(["-c", str(cfg_file), "reset-killswitch"])
+    running.release()

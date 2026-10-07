@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ..state import replace_with_retry
 from ..models import AccountInfo, ClosedTrade, OrderResult, Position, SymbolInfo
 from .base import Broker
 
@@ -267,4 +267,4 @@ class PaperBroker(_SimBrokerMixin, Broker):
         payload = {"account": self.sim.to_dict(),
                    "last_checked": {k: v.isoformat() for k, v in self.last_checked.items()}}
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        os.replace(tmp, self.state_path)
+        replace_with_retry(tmp, self.state_path)

@@ -116,3 +116,17 @@ def test_config_with_utf8_bom(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_bytes("﻿mode: paper\nsymbols: [GBPUSD]\n".encode("utf-8"))
     assert load_config(path).symbols == ["GBPUSD"]
+
+
+def test_switching_data_source_relearns_immediately(cfg):
+    df = synthetic_ohlc(1300, "H1", seed=12)
+    infos = {"EURUSD": default_symbol_info("EURUSD")}
+    store = StateStore(None)
+    broker = BacktestBroker({"EURUSD": df}, infos, 10_000, start=1000)
+    TradingEngine(cfg, broker, store, raise_errors=True, rng_seed=0).step()  # lernt als "paper"
+    first = store.data["last_optimize"]["EURUSD"]
+    broker.advance()
+    cfg.mode = "live"  # gleiche Daten, aber Quelle jetzt "mt5"
+    TradingEngine(cfg, broker, store, raise_errors=True, rng_seed=0).step()
+    assert store.data["learn_source"]["EURUSD"] == "mt5"
+    assert store.data["last_optimize"]["EURUSD"] != first  # sofort neu gelernt, nicht erst in einer Woche

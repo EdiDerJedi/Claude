@@ -79,20 +79,24 @@ def load_context(tickers: dict) -> dict:
 
 
 def load_csv(path: str | Path) -> pd.DataFrame:
-    """CSV laden – auch den MT5-Export ("<DATE>\\t<TIME>\\t<OPEN>...") aus dem Symbolfenster."""
+    """CSV laden – auch den MT5-Export ("<DATE>\\t<TIME>\\t<OPEN>...") und deutsche Excel-Dateien
+    (Semikolon, Dezimalkomma, TT.MM.JJJJ) sowie UTF-16-Dateien."""
     path = Path(path)
-    with path.open("r", encoding="utf-8-sig") as fh:
+    raw = path.read_bytes()[:4]
+    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+    with path.open("r", encoding=encoding) as fh:
         first = fh.readline()
     sep = "\t" if "\t" in first else (";" if first.count(";") > first.count(",") else ",")
-    df = pd.read_csv(path, sep=sep)
-    df.columns = [c.strip().strip("<>").lower() for c in df.columns]
+    german = sep == ";"
+    df = pd.read_csv(path, sep=sep, encoding=encoding, decimal="," if german else ".")
+    df.columns = [str(c).strip().strip("<>").lower() for c in df.columns]
     if "date" in df.columns and "time" in df.columns:
-        ts = pd.to_datetime(df["date"].astype(str) + " " + df["time"].astype(str))
+        ts = pd.to_datetime(df["date"].astype(str) + " " + df["time"].astype(str), dayfirst=german)
     else:
         col = next((c for c in ("time", "datetime", "date", "timestamp") if c in df.columns), None)
         if col is None:
             raise ValueError(f"{path}: keine Zeitspalte gefunden")
-        ts = pd.to_datetime(df[col])
+        ts = pd.to_datetime(df[col], dayfirst=german)
     df.index = ts
     if "tickvol" in df.columns:
         df["volume"] = df["tickvol"]

@@ -7,16 +7,28 @@ echo   TradingAI - Installation
 echo ============================================
 echo.
 
+if not exist "requirements.txt" goto nicht_entpackt
+
+rem Python-Pruefung: Version 3.10 bis 3.14 und 64-Bit-x86 (nur dafuer gibt es das MetaTrader5-Paket)
+set "CHECK=import sys, sysconfig; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) and sysconfig.get_platform() == 'win-amd64' else 1)"
+
 set "PY="
 call :finde_python
 if not defined PY goto python_installieren
 
 :python_ok
 echo Verwende Python: %PY%
+
+rem Eine vorhandene, aber unpassende oder kaputte Umgebung neu anlegen
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" -c "%CHECK%" >nul 2>&1 || (
+        echo Die vorhandene Umgebung .venv passt nicht - sie wird neu erstellt ...
+        rmdir /s /q ".venv"
+    )
+)
 if exist ".venv\Scripts\python.exe" goto venv_ok
 echo Erstelle die virtuelle Umgebung .venv ...
-%PY% -m venv .venv
-if errorlevel 1 goto fehler
+%PY% -m venv .venv || goto fehler
 :venv_ok
 
 rem Eigener Temp-Ordner fuer pip: Manche Virenscanner sperren oder loeschen
@@ -27,13 +39,11 @@ set "TEMP=%~dp0.piptmp"
 
 echo.
 echo Installiere die benoetigten Pakete - das dauert ein paar Minuten ...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
-if errorlevel 1 echo Hinweis: pip konnte nicht aktualisiert werden - es geht trotzdem weiter.
+".venv\Scripts\python.exe" -m pip install --upgrade pip || echo Hinweis: pip konnte nicht aktualisiert werden - es geht trotzdem weiter.
 
 set /a VERSUCH=1
 :pip_install
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
-if not errorlevel 1 goto pip_ok
+".venv\Scripts\python.exe" -m pip install -r requirements.txt && goto pip_ok
 if %VERSUCH% GEQ 3 goto pip_fehler
 set /a VERSUCH+=1
 echo.
@@ -49,8 +59,7 @@ if exist "config.yaml" echo config.yaml ist vorhanden.
 
 echo.
 echo Pruefe die Installation ...
-".venv\Scripts\python.exe" -c "import MetaTrader5, tradingai; print('OK - MetaTrader5-Paket Version', MetaTrader5.__version__)"
-if errorlevel 1 goto fehler
+".venv\Scripts\python.exe" -c "import MetaTrader5, tradingai; print('OK - MetaTrader5-Paket Version', MetaTrader5.__version__)" || goto fehler
 
 echo.
 echo ============================================
@@ -66,17 +75,11 @@ exit /b 0
 
 
 rem ---------------------------------------------------------------------
-rem Sucht ein passendes Python: 3.13 oder 3.12 (64-Bit) bzw. 3.10 bis 3.14.
-rem Neuere Versionen werden vom MetaTrader5-Paket evtl. noch nicht unterstuetzt.
+rem Sucht ein passendes Python ueber den py-Launcher, dann ueber "python".
 :finde_python
-py -3.13 -c "import sys" >nul 2>&1
-if not errorlevel 1 set "PY=py -3.13"
+for %%V in (3.13 3.12 3.14 3.11 3.10) do if not defined PY (py -%%V -c "%CHECK%" >nul 2>&1 && set "PY=py -%%V")
 if defined PY exit /b 0
-py -3.12 -c "import sys" >nul 2>&1
-if not errorlevel 1 set "PY=py -3.12"
-if defined PY exit /b 0
-python -c "import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) and sys.maxsize > 2**32 else 1)" >nul 2>&1
-if not errorlevel 1 set "PY=python"
+python -c "%CHECK%" >nul 2>&1 && set "PY=python"
 if defined PY exit /b 0
 if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" set PY="%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
 exit /b 0
@@ -84,11 +87,10 @@ exit /b 0
 
 :python_installieren
 echo Es wurde kein passendes Python gefunden.
-where winget >nul 2>&1
-if errorlevel 1 goto python_manuell
+where winget >nul 2>&1 || goto python_manuell
 echo Python 3.13 wird jetzt automatisch installiert - bitte warten ...
 echo.
-winget install -e --id Python.Python.3.13 --scope user --accept-package-agreements --accept-source-agreements
+winget install -e --id Python.Python.3.13 --scope user --architecture x64 --accept-package-agreements --accept-source-agreements
 call :finde_python
 if defined PY goto python_ok
 echo.
@@ -103,7 +105,16 @@ echo.
 echo Bitte installiere Python 3.13 [Windows installer 64-bit] von
 echo     https://www.python.org/downloads/windows/
 echo und setze im ersten Fenster des Installers den Haken bei "Add python.exe to PATH".
+echo Auch auf Windows-ARM-Geraeten die 64-bit-Version nehmen, nicht ARM64.
 echo Danach diese Datei erneut starten.
+echo.
+pause
+exit /b 1
+
+:nicht_entpackt
+echo Die ZIP-Datei ist noch nicht entpackt.
+echo Rechtsklick auf die ZIP-Datei - "Alle extrahieren ..." - und install.bat
+echo im entpackten Ordner starten.
 echo.
 pause
 exit /b 1
@@ -129,5 +140,6 @@ exit /b 1
 :fehler
 echo.
 echo FEHLER bei der Installation - bitte die Meldungen oben lesen.
+echo Hilft ein zweiter Versuch nicht: den Ordner .venv loeschen und install.bat erneut starten.
 pause
 exit /b 1

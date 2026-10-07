@@ -4,11 +4,25 @@ import csv
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 import pandas as pd
 
 log = logging.getLogger(__name__)
+
+
+def replace_with_retry(src: Path, dst: Path, attempts: int = 20) -> None:
+    """os.replace mit Wiederholung: Unter Windows kann die Zieldatei kurz von einem
+    anderen Programm (Virenscanner, Editor, Backup) geöffnet sein."""
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.1)
 
 
 class StateStore:
@@ -25,6 +39,7 @@ class StateStore:
         for key in ("params", "last_optimize", "last_retrain", "last_bar", "risk", "decisions", "model_metrics"):
             self.data.setdefault(key, {})
         self.memory_models: dict = {}
+        self._pending_trades: list = []
 
     @property
     def path(self) -> Path:
@@ -35,7 +50,7 @@ class StateStore:
             return
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data, indent=2, default=str), encoding="utf-8")
-        os.replace(tmp, self.path)
+        replace_with_retry(tmp, self.path)
 
     # ------------------------------------------------------------- Zeiten
     def get_time(self, key: str, symbol: str) -> pd.Timestamp | None:
@@ -84,10 +99,23 @@ class StateStore:
 
     # ------------------------------------------------------------- Journal
     def append_trades(self, trades) -> None:
-        if not self.dir or not trades:
+        if not self.dir:
+            return
+        self._pending_trades.extend(trades or [])
+        if not self._pending_trades:
             return
         path = self.dir / "trades.csv"
         new = not path.exists()
+        try:
+            self._write_trades(path, new, self._pending_trades)
+        except PermissionError:
+            log.warning("trades.csv ist gerade geöffnet (Excel?) – %d Einträge werden später nachgetragen",
+                        len(self._pending_trades))
+            return
+        self._pending_trades = []
+
+    @staticmethod
+    def _write_trades(path: Path, new: bool, trades) -> None:
         with path.open("a", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             if new:

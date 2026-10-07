@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import logging.handlers
+import os
 import signal
 import sys
 import time
@@ -94,21 +95,30 @@ def build_internet(cfg: Config, with_news: bool = True):
     return context, news, calendar
 
 
-def make_broker(cfg: Config):
+def check_account(cfg: Config, broker, announce: bool = True) -> None:
+    """Echtgeld-Sperre. Wird beim Start und vor jedem Durchlauf geprüft – auch wenn jemand
+    im laufenden MT5 auf ein anderes Konto wechselt."""
+    acc = broker.account()
+    if acc.is_demo:
+        return
+    if not cfg.mt5.allow_real_account:
+        broker.shutdown()
+        raise SystemExit(
+            "ABBRUCH: Das MT5-Konto ist ein ECHTGELD-Konto. Zum Schutz handelt der Bot nur auf Demokonten.\n"
+            "Wenn du das Risiko bewusst eingehen willst, setze in config.yaml: mt5.allow_real_account: true"
+        )
+    if announce:
+        log.warning("!!! ECHTGELD-KONTO – der Bot handelt mit echtem Geld !!!")
+
+
+def make_broker(cfg: Config, store: StateStore | None = None):
     if cfg.mode == "live":
         from .brokers.mt5 import MT5Broker
 
-        broker = MT5Broker(cfg.mt5)
+        journal = store.data.setdefault("mt5_journal", {}) if store is not None else None
+        broker = MT5Broker(cfg.mt5, journal_state=journal)
         broker.connect()
-        acc = broker.account()
-        if not acc.is_demo:
-            if not cfg.mt5.allow_real_account:
-                broker.shutdown()
-                raise SystemExit(
-                    "ABBRUCH: Das MT5-Konto ist ein ECHTGELD-Konto. Zum Schutz handelt der Bot nur auf Demokonten.\n"
-                    "Wenn du das Risiko bewusst eingehen willst, setze in config.yaml: mt5.allow_real_account: true"
-                )
-            log.warning("!!! ECHTGELD-KONTO – der Bot handelt mit echtem Geld !!!")
+        check_account(cfg, broker)
         return broker
 
     source = cfg.paper.data_source
@@ -148,23 +158,90 @@ def cmd_backtest(args) -> int:
     print(report.format())
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    report.equity.to_csv(out / "equity.csv")
-    report.trades_frame().to_csv(out / "trades.csv", index=False)
-    (out / "learned_state.json").write_text(json.dumps(report.state, indent=2, default=str), encoding="utf-8")
+    try:
+        report.equity.to_csv(out / "equity.csv")
+        report.trades_frame().to_csv(out / "trades.csv", index=False)
+        (out / "learned_state.json").write_text(json.dumps(report.state, indent=2, default=str), encoding="utf-8")
+    except PermissionError as exc:
+        print(f"Konnte {exc.filename} nicht speichern – ist die Datei z.B. in Excel geöffnet? "
+              "Bitte schließen und den Backtest erneut starten.")
+        return 1
     print(f"Kapitalkurve, Trades und gelernter Zustand gespeichert in {out}/")
     return 0
+
+
+def _disable_quickedit() -> None:
+    """Windows-Konsole: QuickEdit ausschalten. Sonst hält schon ein Klick ins Fenster
+    (Textauswahl, Titel „Auswählen“) den Bot an, bis Esc gedrückt wird."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, (mode.value | 0x0080) & ~0x0040)  # EXTENDED_FLAGS an, QUICK_EDIT aus
+    except Exception:
+        pass
+
+
+class InstanceLock:
+    """Verhindert, dass zwei Bots (oder Bot und `train`) gleichzeitig denselben state-Ordner benutzen."""
+
+    def __init__(self, state_dir: str):
+        self.path = Path(state_dir) / "bot.lock"
+        self.fh = None
+
+    def acquire(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "a+")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.fh.close()
+            self.fh = None
+            return False
+        return True
+
+    def release(self) -> None:
+        if self.fh is not None:
+            self.fh.close()  # Sperre wird mit dem Schließen bzw. Prozessende freigegeben
+            self.fh = None
+
+
+def _lock_or_exit(cfg: Config) -> InstanceLock:
+    lock = InstanceLock(cfg.state_dir)
+    if not lock.acquire():
+        raise SystemExit(
+            f"Der Bot läuft bereits mit dem Ordner '{cfg.state_dir}'. Erst das andere Bot-Fenster mit Strg+C "
+            "beenden – zwei Bots auf demselben Konto würden sich gegenseitig stören."
+        )
+    return lock
+
+
+def _sleep(seconds: float, stop: dict) -> None:
+    for _ in range(int(seconds * 10)):
+        if stop["flag"]:
+            return
+        time.sleep(0.1)
 
 
 def cmd_run(args) -> int:
     cfg = load_config(args.config)
     setup_logging(cfg.log_level, cfg.state_dir)
+    _disable_quickedit()
+    lock = _lock_or_exit(cfg)
     log.warning(DISCLAIMER)
-    store = StateStore(cfg.state_dir)
-    broker = make_broker(cfg)
-    context, news, calendar = build_internet(cfg)
-    engine = TradingEngine(cfg, broker, store, news=news, calendar=calendar, context_provider=context)
-    log.info("Bot gestartet: Modus %s, Symbole %s, Timeframe %s", cfg.mode.upper(), ", ".join(cfg.symbols),
-             cfg.timeframe)
 
     stop = {"flag": False}
 
@@ -176,39 +253,69 @@ def cmd_run(args) -> int:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _stop)
 
+    store = StateStore(cfg.state_dir)
+    broker = None
+    while broker is None and not stop["flag"]:
+        try:
+            broker = make_broker(cfg, store)
+        except (ConnectionError, OSError, RuntimeError) as exc:
+            if args.once:
+                raise
+            what = "MetaTrader 5 ist noch nicht bereit" if cfg.mode == "live" else "Kursdaten nicht ladbar"
+            hint = " Ist MT5 gestartet und eingeloggt?" if cfg.mode == "live" else ""
+            log.warning("%s (%s) – neuer Versuch in 30 Sekunden.%s", what, exc, hint)
+            _sleep(30, stop)
+    if broker is None:
+        lock.release()
+        return 0
+
+    context, news, calendar = build_internet(cfg)
+    engine = TradingEngine(cfg, broker, store, news=news, calendar=calendar, context_provider=context)
+    log.info("Bot gestartet: Modus %s, Symbole %s, Timeframe %s", cfg.mode.upper(), ", ".join(cfg.symbols),
+             cfg.timeframe)
+
     try:
         while not stop["flag"]:
             try:
+                if cfg.mode == "live":
+                    check_account(cfg, broker, announce=False)
                 if engine.step():
                     log.info("Warte auf die nächste %s-Kerze (Prüfung alle %d Sekunden). Beenden mit Strg+C.",
                              cfg.timeframe, cfg.loop_seconds)
             except ConnectionError as exc:
-                log.error("Verbindungsproblem: %s – neuer Versuch im nächsten Durchlauf", exc)
+                log.error("Verbindungsproblem: %s – verbinde neu ...", exc)
+                if hasattr(broker, "reconnect"):
+                    try:
+                        broker.reconnect()
+                        check_account(cfg, broker)
+                        log.info("Wieder mit MetaTrader 5 verbunden.")
+                    except ConnectionError as exc2:
+                        log.error("Neu verbinden fehlgeschlagen (%s) – nächster Versuch gleich.", exc2)
             except Exception:
                 log.exception("Unerwarteter Fehler im Durchlauf")
             if args.once:
                 break
-            for _ in range(int(cfg.loop_seconds * 10)):
-                if stop["flag"]:
-                    break
-                time.sleep(0.1)
+            _sleep(cfg.loop_seconds, stop)
     finally:
         store.save()
         broker.shutdown()
+        lock.release()
     return 0
 
 
 def cmd_train(args) -> int:
     cfg = load_config(args.config)
     setup_logging(cfg.log_level, cfg.state_dir)
+    lock = _lock_or_exit(cfg)
     store = StateStore(cfg.state_dir)
-    broker = make_broker(cfg)
+    broker = make_broker(cfg, store)
     context, _, _ = build_internet(cfg, with_news=False)
     if context is not None:
         context.update(force=True)
     engine = TradingEngine(cfg, broker, store, context_provider=context, learn=True)
     engine.learn_all()
     broker.shutdown()
+    lock.release()
     print_status(cfg, store)
     return 0
 
@@ -270,9 +377,11 @@ def cmd_news(args) -> int:
 
 def cmd_reset(args) -> int:
     cfg = load_config(args.config)
+    lock = _lock_or_exit(cfg)  # der laufende Bot würde den Reset sonst wieder überschreiben
     store = StateStore(cfg.state_dir)
     RiskManager(cfg.risk, store.data["risk"]).reset_kill_switch()
     store.save()
+    lock.release()
     print("Not-Aus zurückgesetzt.")
     return 0
 
